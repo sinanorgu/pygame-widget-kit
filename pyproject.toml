@@ -11,12 +11,9 @@ authors = [
 description = "A GUI framework built on Pygame. Designed as a retained-mode UI system with a component tree, extensible widgets, and focus management."
 readme = "README.md"
 requires-python = ">=3.7"
-license = {text = "MIT License"}
-
-# EKLEME 1: Arama motoru optimizasyonu
+license = { text = "MIT" }  
 keywords = ["pygame", "ui", "gui", "toolkit", "widgets", "interface", "game-development", "inputbox", "buttons"]
 
-# EKLEME 2: Sınıflandırmalar (Biraz genişlettim)
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -26,7 +23,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
-# EKLEME 3: Otomatik yüklenecek paketler
+
 dependencies = [
     "pygame>=2.0.0",
 ]
