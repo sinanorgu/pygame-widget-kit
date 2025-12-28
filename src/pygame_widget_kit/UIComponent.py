@@ -20,7 +20,7 @@ class UIComponent:
 
         self.border_color = border_color
         self.show_border = True if border_color is not None else False
-
+        self.color_active = tuple(max(c - 40, 0) for c in color) if color is not None else None
 
         self.color = color
 
@@ -58,7 +58,7 @@ class UIComponent:
     def on_hover(self, is_hover):
         self.hovered = is_hover
 
-    def on_click(self, event):
+    def on_click(self,event):
         pass
 
     def on_focus(self):
@@ -105,21 +105,21 @@ class UIComponent:
 
         elif self.active:
             if fill_color is not None:
-                fill_color = tuple(max(c - 40, 0) for c in fill_color)
+                fill_color = self.color_active
 
         elif self.hovered:
             if fill_color is not None:
-                fill_color = tuple(min(c + 30, 255) for c in fill_color)
+                fill_color = self.hover_color
 
         if fill_color is not None:    
             pygame.draw.rect(surface, fill_color, self.absolute_rect, 0)
 
         if self.show_border:
-            border_color = (255, 201, 0) 
+            border_color = self.color
             
 
             if self.focused:
-                border_color = (255, 201, 0) 
+                border_color =self.border_color
             pygame.draw.rect(surface, border_color, self.absolute_rect, 2)
 
         self.draw_child(surface)

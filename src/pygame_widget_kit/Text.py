@@ -4,11 +4,12 @@ from .UIComponent import *
 class Text(UIComponent):
     def __init__(self, text_str="",font_size=25,
                  font_type='Veranda',pos=(0,0),
-                 text_color:tuple[int,int,int] = (0,0,0),
+                 text_color:tuple[int,int,int] = (127,127,127),
                  bg_color:tuple[int,int,int] = (0,0,0),
                  style=None, 
                  z_index=0, 
                  color=None, 
+                 
                  border_color=...):
         
         self.font_size=font_size
@@ -19,10 +20,10 @@ class Text(UIComponent):
         self.render = self.font.render(text_str, True,self.text_color , None)        
         self.size = self.render.get_size()
         rect = (pos[0],pos[1],self.size[0],self.size[1])
-
+        
         super().__init__(rect, style, z_index, color, border_color)
         
-    def update_text(self,new_text_str):
+    def set_text(self,new_text_str):
         self.text_str = new_text_str
         self.render = self.font.render(self.text_str, True,self.text_color , None)        
         self.size = self.render.get_size()

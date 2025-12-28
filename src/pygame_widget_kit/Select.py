@@ -1,32 +1,25 @@
 import pygame
 from .UIComponent import UIComponent
 from .Text import Text
+from .Button import *
+from functools import partial
 
 
-class SelectOption(UIComponent):
-    def __init__(self, text, value, rect, parent_select, color=(200,200,200)):
-        super().__init__(rect, color=color)
+class SelectOption(Button):
+    def __init__(self,value:str, rect, parent_select:"Select", color=(200,200,200),border_color = (127,127,127)):
+        super().__init__(text_str=value,pos=(rect[0],rect[1]),size=(rect[2],rect[3]), color=color,padding=(5,5),text_color=(0,0,0),border_color=border_color)
         self.value = value
         self.parent_select = parent_select
 
-        self.label = Text(
-            text_str=text,
-            pos=(5, 5),
-            text_color=(0,0,0)
-        )
-        self.add_child(self.label)
-
-    def handle_event(self, event):
-        if not self.enabled or not self.visible:
-            return
-
-        if event.type == pygame.MOUSEBUTTONUP:
-            if self.is_in_rect(event.pos):
-                self.on_click(event)
 
     def on_click(self, event):
         self.parent_select.set_value(self.value)
         self.parent_select.close()
+        if self.click_function:
+            self.click_function()
+
+
+
 
 
 
@@ -34,20 +27,22 @@ class Select(UIComponent):
     def __init__(
         self,
         rect,
-        options:list[tuple[str, any]],
+        options:list[str],
         default_index=0,
         color=(180,180,180),
-        hover_color=(200,200,200)
+        hover_color=(200,200,200),
+        border_color = (0,255,0),
+        z_index = 0
     ):
-        super().__init__(rect, color=color, hover_color=hover_color)
+        super().__init__(rect, color=color, hover_color=hover_color,border_color=border_color,z_index=z_index)
 
         self.options = options
         self.is_open = False
-        self.selected_index = default_index
+        self.selected_value = options[default_index] 
 
         # Görünen text
         self.text = Text(
-            text_str=self.options[self.selected_index][0],
+            text_str=self.selected_value,
             pos=(8, 8),
             text_color=(0,0,0)
         )
@@ -56,6 +51,13 @@ class Select(UIComponent):
         # Dropdown option container
         self.option_height = rect[3]
         self.option_components:list[SelectOption] = []
+        self.add_all_options()
+
+        self.on_option_change = None
+    
+
+    def bind_on_option_chance(self,func,*args):
+        self.on_option_change = partial(func, *args)
 
     def toggle(self):
         if self.is_open:
@@ -63,16 +65,11 @@ class Select(UIComponent):
         else:
             self.open()
 
-    def open(self):
-        if self.is_open:
-            return
 
-        self.is_open = True
-        self.option_components.clear()
-
+    def add_all_options(self):
         base_x, base_y, w, h = self.rect
 
-        for i, (label, value) in enumerate(self.options):
+        for i, value in enumerate(self.options):
             opt_rect = (
                 0,
                 h * (i + 1),
@@ -81,7 +78,6 @@ class Select(UIComponent):
             )
 
             opt = SelectOption(
-                label,
                 value,
                 opt_rect,
                 parent_select=self,
@@ -90,25 +86,34 @@ class Select(UIComponent):
             opt.z_index = self.z_index + 1
             self.add_child(opt)
             self.option_components.append(opt)
+            opt.visible = False
 
+    def open(self):
+        if self.is_open:
+            return
+
+        self.is_open = True
+        for opt in self.option_components:
+            opt.visible = True
+    
         self.ui_manager.modal = self
 
 
     def close(self):
         self.is_open = False
-
-        for opt in self.option_components:
-            self.children.remove(opt)
-
-        self.option_components.clear()
+        # for opt in self.option_components:
+        #     self.children.remove(opt)
+        #self.option_components.clear()
         self.ui_manager.modal = None
+        for opt in self.option_components:
+            opt.visible = False
+
 
     def set_value(self, value):
-        for i, (_, v) in enumerate(self.options):
-            if v == value:
-                self.selected_index = i
-                self.text.update_text(self.options[i][0])
-                break
+        self.selected_value = value
+        self.text.set_text(value)
+        if self.on_option_change:
+            self.on_option_change()
 
     def on_click(self, event):
         self.toggle()

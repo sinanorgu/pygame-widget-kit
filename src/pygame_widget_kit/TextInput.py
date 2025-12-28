@@ -1,7 +1,9 @@
 import pygame
 from .UIComponent import UIComponent
 from .Text import Text
+import time
 
+""" 
 class TextInput2(UIComponent):
     def __init__(
         self,
@@ -67,7 +69,7 @@ class TextInput2(UIComponent):
                 if event.unicode and event.unicode.isprintable():
                     self.text_value += event.unicode
 
-            self.text.update_text(self.text_value)
+            self.text.set_text(self.text_value)
     def on_click(self, event):
         # sadece focus almak yeterli
         pass
@@ -110,10 +112,21 @@ class TextInput2(UIComponent):
 
     def set_value(self, value: str):
         self.text_value = value
-        self.text.update_text(value)
+        self.text.set_text(value)
 
     def clear(self):
         self.set_value("")
+ """
+
+
+
+ALLOW_ALL_CHARS = 0
+NUMBER_ONLY = 1
+TEXT_ONLY = 2
+HEX_ONLY = 3
+BINARY_ONLY = 4
+OCTAL_ONLY = 5
+
 
 
 class TextInput(UIComponent):
@@ -121,6 +134,7 @@ class TextInput(UIComponent):
         self,
         rect,
         initial_text="",
+        allowed_char_mode:int=0,
         text_color=(0, 0, 0),
         bg_color=(220, 220, 220),
         hover_color=(240, 240, 240),
@@ -129,6 +143,7 @@ class TextInput(UIComponent):
         padding=6,
         z_index=0
     ):
+        
         super().__init__(
             rect=rect,
             z_index=z_index,
@@ -141,6 +156,7 @@ class TextInput(UIComponent):
         self.selection_color = selection_color
         self.caret_color = caret_color
         self.padding = padding
+        self.allowed_char_mode=allowed_char_mode
 
         # text render
         self.text = Text(
@@ -159,9 +175,10 @@ class TextInput(UIComponent):
         # caret blink
         self.caret_visible = True
         self._caret_timer = 0
-        self._caret_interval = 500
+        self._caret_interval = 0.5
+        self.last_blinked_at = time.time()
 
-        pygame.scrap.init()
+    
     def _mouse_to_index(self, mouse_x):
         local_x = mouse_x - self.absolute_rect[0] - self.padding
         if local_x <= 0:
@@ -178,7 +195,9 @@ class TextInput(UIComponent):
         self.cursor_index = self._mouse_to_index(event.pos[0])
         self.selection_start = self.cursor_index
         self.selection_end = None
-    def handle_event(self, event):
+
+
+    def handle_event(self, event:pygame.Event):
         if not self.focused or not self.enabled:
             return
 
@@ -192,24 +211,8 @@ class TextInput(UIComponent):
             self.dragging = False
             if self.selection_start == self.selection_end:
                 self.selection_start = self.selection_end = None
+
         if event.type == pygame.KEYDOWN:
-
-            ctrl = event.mod & pygame.KMOD_CTRL
-
-            # COPY
-            if ctrl and event.key == pygame.K_c and self.has_selection():
-                pygame.scrap.put(
-                    pygame.SCRAP_TEXT,
-                    self.get_selected_text().encode()
-                )
-                return
-
-            # PASTE
-            if ctrl and event.key == pygame.K_v:
-                clip = pygame.scrap.get(pygame.SCRAP_TEXT)
-                if clip:
-                    self.insert_text(clip.decode())
-                return
 
             # BACKSPACE
             if event.key == pygame.K_BACKSPACE:
@@ -222,11 +225,50 @@ class TextInput(UIComponent):
                     )
                     self.cursor_index -= 1
 
+
+            #arrow keys
+            elif event.key == pygame.K_UP:
+                self.cursor_index = 0
+            elif event.key == pygame.K_DOWN:
+                self.cursor_index = len(self.text_value)
+            elif event.key == pygame.K_RIGHT:
+                if self.cursor_index <len(self.text_value):
+                    self.cursor_index+=1
+            elif event.key == pygame.K_LEFT:
+                if self.cursor_index > 0:
+                    self.cursor_index-=1
+            
+            
+            
             # NORMAL CHARACTER
             elif event.unicode and event.unicode.isprintable():
-                self.insert_text(event.unicode)
+                c:str = event.unicode
+                if self.allowed_char_mode == ALLOW_ALL_CHARS:
+                    self.insert_text(c)
+                elif self.allowed_char_mode == TEXT_ONLY:
+                    if c.isnumeric() == False:
+                        self.insert_text(c)
+                elif self.allowed_char_mode == NUMBER_ONLY:
+                    if c.isnumeric():
+                        self.insert_text(c)
+                elif self.allowed_char_mode == HEX_ONLY:
+                    if c.isnumeric() or c.capitalize() in "ABCDEF":
+                        self.insert_text(c)
+                elif self.allowed_char_mode == BINARY_ONLY:
+                    if c in "10":
+                        self.insert_text(c)
+                elif self.allowed_char_mode == OCTAL_ONLY:
+                    if c in "12345678":
+                        self.insert_text(c)
+                
+                
+                
 
-            self.text.update_text(self.text_value)
+            
+
+            self.text.set_text(self.text_value)
+
+
     def has_selection(self):
         return (
             self.selection_start is not None
@@ -257,17 +299,19 @@ class TextInput(UIComponent):
             + self.text_value[self.cursor_index:]
         )
         self.cursor_index += len(s)
-    def update(self, dt):
+    def update(self):
         if not self.focused:
             self.caret_visible = False
             return
 
-        self._caret_timer += dt
-        if self._caret_timer >= self._caret_interval:
-            self._caret_timer = 0
+        
+        if time.time() - self.last_blinked_at >= self._caret_interval:
+            self.last_blinked_at = time.time()
             self.caret_visible = not self.caret_visible
+
     def draw(self, surface):
         super().draw(surface)
+        self.update()
 
         # SELECTION
         if self.has_selection():
