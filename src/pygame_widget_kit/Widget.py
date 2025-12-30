@@ -8,7 +8,7 @@ class Widget(UIComponent):
             hover_color = color
         super().__init__(rect, style, z_index, color, border_color, hover_color)
     
-    def draw(self, surface,parent_pos = None):
+    def draw(self, surface):
 
         return super().draw(surface)
     

@@ -11,9 +11,9 @@ PyPI: https://pypi.org/project/pygame-widget-kit/
 - Retained-mode component tree with nested children
 - Event routing with hover, focus, and active state handling
 - Modal/dropdown support via `UIManager`
-- Built-in widgets: `Button`, `Text`, `Select`, `Radio`, `TextInput`
+- Built-in widgets: `Button`, `Text`, `Select`, `Radio`, `TextInput`, `Slider`
 - Text input filtering modes (text, number, hex, binary, octal)
-- Clipboard copy/paste in `TextInput` (requires `pygame.scrap`)
+
 
 ## Installation
 
@@ -113,6 +113,14 @@ def main():
     root.add_child(radio_value)
 
     radio_last_value = radio.get_value()
+    slider = Slider((20,580),size=(500,20),min_value=50,max_value=2000)
+    slider_value = Text("Sider Value", pos=(20, 600), text_color=(0, 0, 0))
+    slider.change_bind(update_slider_label,slider,slider_value)
+    
+    root.add_child(slider)
+    root.add_child(slider_value)
+
+    
 
     running = True
     while running:

@@ -5,6 +5,7 @@ from .Button import *
 from functools import partial
 
 
+
 class SelectOption(Button):
     def __init__(self,value:str, rect, parent_select:"Select", color=(200,200,200),border_color = (127,127,127)):
         super().__init__(text_str=value,pos=(rect[0],rect[1]),size=(rect[2],rect[3]), color=color,padding=(5,5),text_color=(0,0,0),border_color=border_color)
@@ -116,10 +117,12 @@ class Select(UIComponent):
             self.on_option_change()
 
     def on_click(self, event):
-        self.toggle()
+        if self.enabled:
+            self.toggle()
     
     def draw(self, surface: pygame.Surface):
-
+        if self.visible == False:
+            return
         super().draw(surface)
 
         cx = self.absolute_rect[0] + self.absolute_rect[2] - 15

@@ -115,12 +115,15 @@ class UIComponent:
             pygame.draw.rect(surface, fill_color, self.absolute_rect, 0)
 
         if self.show_border:
+
             border_color = self.color
             
 
             if self.focused:
-                border_color =self.border_color
-            pygame.draw.rect(surface, border_color, self.absolute_rect, 2)
+                border_color = self.border_color
+                
+            if border_color:
+                pygame.draw.rect(surface, border_color, self.absolute_rect, 2)
 
         self.draw_child(surface)
     

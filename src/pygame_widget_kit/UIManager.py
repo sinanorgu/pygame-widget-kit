@@ -32,7 +32,7 @@ class UIManager:
                 if hit:
                     return hit
             else:
-                if child.is_in_rect(pos):
+                if child.is_in_rect(pos) and child.visible:
                     return child
 
         if component.is_in_rect(pos):
