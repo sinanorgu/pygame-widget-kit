@@ -11,7 +11,7 @@ PyPI: https://pypi.org/project/pygame-widget-kit/
 - Retained-mode component tree with nested children
 - Event routing with hover, focus, and active state handling
 - Modal/dropdown support via `UIManager`
-- Built-in widgets: `Button`, `Text`, `Select`, `Radio`, `TextInput`, `Slider`
+- Built-in widgets: `Button`, `Text`, `Select`, `Radio`, `TextInput`, `Slider`,`TextArea`,`TextInput2D`
 - Text input filtering modes (text, number, hex, binary, octal)
 
 

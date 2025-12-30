@@ -343,3 +343,245 @@ class TextInput(UIComponent):
                 self.caret_color,
                 (cx, cy, 2, self.text.render.get_height())
             )
+
+
+
+class TextInput2D(UIComponent):
+    def __init__(
+        self,
+        rect,
+        initial_text="",
+        text_color=(0, 0, 0),
+        bg_color=(220, 220, 220),
+        hover_color=(240, 240, 240),
+        selection_color=(100, 150, 255),
+        caret_color=(0, 0, 0),
+        padding=6,
+        font_size=25,
+        font_type='Veranda',
+        z_index=0
+    ):
+        super().__init__(
+            rect=rect,
+            z_index=z_index,
+            color=bg_color,
+            hover_color=hover_color
+        )
+
+        self.text_color = text_color
+        self.selection_color = selection_color
+        self.caret_color = caret_color
+        self.padding = padding
+        self.font_size = font_size
+        self.font_type = font_type
+        self.font = pygame.font.SysFont(self.font_type, self.font_size)
+
+        self.lines = initial_text.split('\n') if initial_text else ['']
+        self.cursor_line = 0
+        self.cursor_col = 0
+
+        self.selection_start = None
+        self.selection_end = None
+        self.dragging = False
+
+        # caret blink
+        self.caret_visible = True
+        self._caret_timer = 0
+        self._caret_interval = 0.5
+        self.last_blinked_at = time.time()
+
+    def get_text(self):
+        return '\n'.join(self.lines)
+
+    def set_text(self, text):
+        self.lines = text.split('\n') if text else ['']
+        self.cursor_line = min(self.cursor_line, len(self.lines) - 1)
+        self.cursor_col = min(self.cursor_col, len(self.lines[self.cursor_line]))
+
+    def _get_line_height(self):
+        return self.font.get_height()
+
+    def _get_text_width(self, text):
+        return self.font.size(text)[0]
+
+    def _mouse_to_pos(self, mouse_x, mouse_y):
+        local_x = mouse_x - self.absolute_rect[0] - self.padding
+        local_y = mouse_y - self.absolute_rect[1] - self.padding
+
+        line_height = self._get_line_height()
+        line = int(local_y // line_height)
+        line = max(0, min(line, len(self.lines) - 1))
+
+        line_text = self.lines[line]
+        col = 0
+        for i in range(len(line_text) + 1):
+            if self._get_text_width(line_text[:i]) > local_x:
+                col = i - 1
+                break
+        else:
+            col = len(line_text)
+
+        return line, col
+
+    def on_click(self, event):
+        self.dragging = True
+        self.cursor_line, self.cursor_col = self._mouse_to_pos(event.pos[0], event.pos[1])
+        self.selection_start = (self.cursor_line, self.cursor_col)
+        self.selection_end = None
+
+    def handle_event(self, event: pygame.Event):
+        if not self.focused or not self.enabled:
+            return
+
+        # MOUSE DRAG SELECTION
+        if event.type == pygame.MOUSEMOTION and self.dragging:
+            line, col = self._mouse_to_pos(event.pos[0], event.pos[1])
+            self.selection_end = (line, col)
+            self.cursor_line, self.cursor_col = line, col
+
+        if event.type == pygame.MOUSEBUTTONUP:
+            self.dragging = False
+            if self.selection_start == self.selection_end:
+                self.selection_start = self.selection_end = None
+
+        if event.type == pygame.KEYDOWN:
+            # BACKSPACE
+            if event.key == pygame.K_BACKSPACE:
+                if self.has_selection():
+                    self.delete_selection()
+                elif self.cursor_col > 0:
+                    self.lines[self.cursor_line] = (
+                        self.lines[self.cursor_line][:self.cursor_col - 1]
+                        + self.lines[self.cursor_line][self.cursor_col:]
+                    )
+                    self.cursor_col -= 1
+                elif self.cursor_line > 0:
+                    # Join with previous line
+                    prev_line = self.lines[self.cursor_line - 1]
+                    self.cursor_col = len(prev_line)
+                    self.lines[self.cursor_line - 1] += self.lines[self.cursor_line]
+                    del self.lines[self.cursor_line]
+                    self.cursor_line -= 1
+
+            # ENTER
+            elif event.key == pygame.K_RETURN:
+                if self.has_selection():
+                    self.delete_selection()
+                line = self.lines[self.cursor_line]
+                self.lines[self.cursor_line] = line[:self.cursor_col]
+                self.lines.insert(self.cursor_line + 1, line[self.cursor_col:])
+                self.cursor_line += 1
+                self.cursor_col = 0
+
+            # ARROW KEYS
+            elif event.key == pygame.K_LEFT:
+                if self.cursor_col > 0:
+                    self.cursor_col -= 1
+                elif self.cursor_line > 0:
+                    self.cursor_line -= 1
+                    self.cursor_col = len(self.lines[self.cursor_line])
+            elif event.key == pygame.K_RIGHT:
+                if self.cursor_col < len(self.lines[self.cursor_line]):
+                    self.cursor_col += 1
+                elif self.cursor_line < len(self.lines) - 1:
+                    self.cursor_line += 1
+                    self.cursor_col = 0
+            elif event.key == pygame.K_UP:
+                if self.cursor_line > 0:
+                    self.cursor_line -= 1
+                    self.cursor_col = min(self.cursor_col, len(self.lines[self.cursor_line]))
+            elif event.key == pygame.K_DOWN:
+                if self.cursor_line < len(self.lines) - 1:
+                    self.cursor_line += 1
+                    self.cursor_col = min(self.cursor_col, len(self.lines[self.cursor_line]))
+
+            # TYPING
+            elif event.unicode and event.unicode.isprintable():
+                if self.has_selection():
+                    self.delete_selection()
+                line = self.lines[self.cursor_line]
+                self.lines[self.cursor_line] = line[:self.cursor_col] + event.unicode + line[self.cursor_col:]
+                self.cursor_col += 1
+
+    def has_selection(self):
+        return (
+            self.selection_start is not None
+            and self.selection_end is not None
+            and self.selection_start != self.selection_end
+        )
+
+    def get_selection_range(self):
+        # For simplicity, assume single line selection or handle multi-line later
+        # This is complex, for now assume same line
+        if not self.has_selection():
+            return None
+        start_line, start_col = self.selection_start
+        end_line, end_col = self.selection_end
+        if start_line != end_line:
+            # Multi-line selection, for now just clear
+            return None
+        return sorted((start_col, end_col))
+
+    def delete_selection(self):
+        if not self.has_selection():
+            return
+        start_line, start_col = self.selection_start
+        end_line, end_col = self.selection_end
+        if start_line == end_line:
+            line = self.lines[start_line]
+            a, b = sorted((start_col, end_col))
+            self.lines[start_line] = line[:a] + line[b:]
+            self.cursor_line = start_line
+            self.cursor_col = a
+        # Multi-line delete not implemented yet
+        self.selection_start = self.selection_end = None
+
+    def update(self):
+        if not self.focused:
+            self.caret_visible = False
+            return
+
+        if time.time() - self.last_blinked_at >= self._caret_interval:
+            self.last_blinked_at = time.time()
+            self.caret_visible = not self.caret_visible
+
+    def draw(self, surface):
+        super().draw(surface)
+        self.update()
+
+        line_height = self._get_line_height()
+        y = self.absolute_rect[1] + self.padding
+
+        for i, line in enumerate(self.lines):
+            render = self.font.render(line, True, self.text_color)
+            surface.blit(render, (self.absolute_rect[0] + self.padding, y))
+            y += line_height
+
+        # CARET
+        if self.focused and self.caret_visible:
+            caret_x = self.absolute_rect[0] + self.padding + self._get_text_width(self.lines[self.cursor_line][:self.cursor_col])
+            caret_y = self.absolute_rect[1] + self.padding + self.cursor_line * line_height
+
+            pygame.draw.rect(
+                surface,
+                self.caret_color,
+                (caret_x, caret_y, 2, line_height)
+            )
+
+        # SELECTION - simplified, only same line
+        if self.has_selection():
+            sel_range = self.get_selection_range()
+            if sel_range:
+                a, b = sel_range
+                line = self.lines[self.cursor_line]
+                x1 = self.absolute_rect[0] + self.padding + self._get_text_width(line[:a])
+                x2 = self.absolute_rect[0] + self.padding + self._get_text_width(line[:b])
+                y = self.absolute_rect[1] + self.padding + self.cursor_line * line_height
+
+                pygame.draw.rect(
+                    surface,
+                    self.selection_color,
+                    (x1, y, x2 - x1, line_height)
+                )
+
+
