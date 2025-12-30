@@ -197,7 +197,7 @@ class TextInput(UIComponent):
         self.selection_end = None
 
 
-    def handle_event(self, event:pygame.Event):
+    def handle_event(self, event:pygame.event.Event):
         if not self.focused or not self.enabled:
             return
 
@@ -429,7 +429,7 @@ class TextInput2D(UIComponent):
         self.selection_start = (self.cursor_line, self.cursor_col)
         self.selection_end = None
 
-    def handle_event(self, event: pygame.Event):
+    def handle_event(self, event: pygame.event.Event):
         if not self.focused or not self.enabled:
             return
 
