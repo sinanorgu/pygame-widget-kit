@@ -1,5 +1,6 @@
 import pygame
 from .Widget import*
+from .Animation import AnimationManager
 
 class UIManager:
     def __init__(self, root):
@@ -7,6 +8,7 @@ class UIManager:
         self.focused = None
         self.active = None
         self.modal = None  #  dropdown / modal
+        self.animation_manager = AnimationManager()
         self._bind_manager(root)
     
     def _bind_manager(self, component):
@@ -124,3 +126,6 @@ class UIManager:
 
         if target:
             target.hovered = True
+
+    def update(self, dt: float):
+        self.animation_manager.update(dt)
