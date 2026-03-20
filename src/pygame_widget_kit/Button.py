@@ -90,7 +90,8 @@ class Button(UIComponent):
         if self.click_function is not None:
             self.click_function()
         else:
-            print("Button clicked")
+            #print("Button clicked")
+            pass
     
 
 
