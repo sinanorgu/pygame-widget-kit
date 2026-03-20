@@ -64,6 +64,7 @@ class UIManager:
             if target:
                 self.active = target
                 target.active = True
+                target.handle_event(event)
 
                 # focus yönetimi
                 if self.focused and self.focused != target:

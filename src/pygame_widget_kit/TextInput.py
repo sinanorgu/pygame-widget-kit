@@ -178,6 +178,9 @@ class TextInput(UIComponent):
         self._caret_interval = 0.5
         self.last_blinked_at = time.time()
 
+        #Keyboard repeat settings
+        pygame.key.set_repeat(400, 50)
+
     
     def _mouse_to_index(self, mouse_x):
         local_x = mouse_x - self.absolute_rect[0] - self.padding
@@ -190,11 +193,14 @@ class TextInput(UIComponent):
                 return i
 
         return len(self.text_value)
+    
     def on_click(self, event):
-        self.dragging = True
-        self.cursor_index = self._mouse_to_index(event.pos[0])
-        self.selection_start = self.cursor_index
-        self.selection_end = None
+        # self.dragging = True
+        # self.cursor_index = self._mouse_to_index(event.pos[0])
+        # self.selection_start = self.cursor_index
+        # self.selection_end = None
+        print("onclick tetiklendi")
+        self.handle_event(event)
 
 
     def handle_event(self, event:pygame.event.Event):
@@ -202,15 +208,26 @@ class TextInput(UIComponent):
             return
 
         # MOUSE DRAG SELECTION
-        if event.type == pygame.MOUSEMOTION and self.dragging:
-            idx = self._mouse_to_index(event.pos[0])
-            self.selection_end = idx
-            self.cursor_index = idx
+        if event.type == pygame.MOUSEMOTION:
+            if self.dragging:
+                idx = self._mouse_to_index(event.pos[0])
+                self.selection_end = idx
+                self.cursor_index = idx
 
         if event.type == pygame.MOUSEBUTTONUP:
             self.dragging = False
             if self.selection_start == self.selection_end:
                 self.selection_start = self.selection_end = None
+            print(self.get_selected_text())
+            print("mouseup tetiklendi")
+        
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            self.dragging = True
+            self.cursor_index = self._mouse_to_index(event.pos[0])
+            self.selection_start = self.cursor_index
+            self.selection_end = None
+            print("mousedown tetiklendi")
+
 
         if event.type == pygame.KEYDOWN:
 
@@ -280,8 +297,11 @@ class TextInput(UIComponent):
         return sorted((self.selection_start, self.selection_end))
 
     def get_selected_text(self):
-        a, b = self.get_selection_range()
-        return self.text_value[a:b]
+        try:
+            a, b = self.get_selection_range()
+            return self.text_value[a:b]
+        except:
+            return ""
 
     def delete_selection(self):
         a, b = self.get_selection_range()
@@ -389,6 +409,9 @@ class TextInput2D(UIComponent):
         self._caret_timer = 0
         self._caret_interval = 0.5
         self.last_blinked_at = time.time()
+    
+        #Keyboard repeat settings
+    
 
     def get_text(self):
         return '\n'.join(self.lines)
