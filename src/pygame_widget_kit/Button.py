@@ -103,7 +103,7 @@ class ChooseFileButton(Button):
         self.chosen_file_path = None
     
     def on_click(self, event):
-        print("Dosya seçici ayrı işlemde başlatılıyor...")
+        #print("Dosya seçici ayrı işlemde başlatılıyor...")
                         
         q = multiprocessing.Queue()
         
@@ -115,16 +115,17 @@ class ChooseFileButton(Button):
             sonuc = q.get()
             if sonuc: 
                 secilen_dosya = sonuc
-                print(f"Gelen dosya: {secilen_dosya}")
+                #print(f"Gelen dosya: {secilen_dosya}")
                 self.chosen_file_path = secilen_dosya
                 self.text.set_text(secilen_dosya)
                 if self.click_function is not None:
                     self.click_function()
                 else:
-                    print("islem iptal")
+                    #print("islem iptal")
+                    pass
         else:
-            print("İşlem iptal edildi veya hata oluştu.")
-
+            #print("İşlem iptal edildi veya hata oluştu.")
+            pass
 
         
         

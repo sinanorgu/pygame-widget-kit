@@ -199,7 +199,7 @@ class TextInput(UIComponent):
         # self.cursor_index = self._mouse_to_index(event.pos[0])
         # self.selection_start = self.cursor_index
         # self.selection_end = None
-        print("onclick tetiklendi")
+        #print("onclick tetiklendi")
         self.handle_event(event)
 
 
@@ -218,15 +218,15 @@ class TextInput(UIComponent):
             self.dragging = False
             if self.selection_start == self.selection_end:
                 self.selection_start = self.selection_end = None
-            print(self.get_selected_text())
-            print("mouseup tetiklendi")
+            #print(self.get_selected_text())
+            #print("mouseup tetiklendi")
         
         if event.type == pygame.MOUSEBUTTONDOWN:
             self.dragging = True
             self.cursor_index = self._mouse_to_index(event.pos[0])
             self.selection_start = self.cursor_index
             self.selection_end = None
-            print("mousedown tetiklendi")
+            #print("mousedown tetiklendi")
 
 
         if event.type == pygame.KEYDOWN:
