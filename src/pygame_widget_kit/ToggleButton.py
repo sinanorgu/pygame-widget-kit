@@ -2,6 +2,7 @@ import pygame
 import pygame.gfxdraw
 from functools import partial
 from .UIComponent import UIComponent
+from .Animation import Easing
 
 
 class ToggleButton(UIComponent):
@@ -31,18 +32,37 @@ class ToggleButton(UIComponent):
 
         self._toggle_callback = None
 
+        self.knob_progress = 1.0 if self.state else 0.0
+        self.animation_duration = 0.16
+
     def bind_on_toggle(self, func, *args):
         self._toggle_callback = partial(func, *args)
 
-    def set_state(self, value: bool):
+    def set_state(self, value: bool, animated: bool = True):
         next_state = bool(value)
-        if self.state != next_state:
-            self.state = next_state
-            if self._toggle_callback is not None:
-                self._toggle_callback()
+        if self.state == next_state:
+            return
 
-    def toggle(self):
-        self.set_state(not self.state)
+        self.state = next_state
+        target_progress = 1.0 if self.state else 0.0
+
+        if animated and self.ui_manager is not None:
+            self.ui_manager.animation_manager.animate_attr(
+                target=self,
+                attr_name="knob_progress",
+                to_value=target_progress,
+                duration=self.animation_duration,
+                easing=Easing.ease_out_cubic,
+                key=(id(self), "toggle_knob_progress"),
+            )
+        else:
+            self.knob_progress = target_progress
+
+        if self._toggle_callback is not None:
+            self._toggle_callback()
+
+    def toggle(self, animated: bool = True):
+        self.set_state(not self.state, animated=animated)
 
     def get_state(self):
         return self.state
@@ -107,28 +127,32 @@ class ToggleButton(UIComponent):
         track_rect = pygame.Rect(self.absolute_rect)
         border_radius = track_rect.height // 2
 
-        if self.state:
+        progress = max(0.0, min(1.0, self.knob_progress))
+
+        pygame.draw.rect(surface, self.off_color, track_rect, border_radius=border_radius)
+
+        if progress > 0.0:
+            gradient_surface = pygame.Surface((track_rect.width, track_rect.height), pygame.SRCALPHA)
             self._draw_horizontal_gradient(
-                surface,
-                track_rect,
+                gradient_surface,
+                pygame.Rect(0, 0, track_rect.width, track_rect.height),
                 self.on_gradient_start,
                 self.on_gradient_end,
                 border_radius,
             )
-        else:
-            pygame.draw.rect(surface, self.off_color, track_rect, border_radius=border_radius)
+            gradient_surface.set_alpha(int(255 * progress))
+            surface.blit(gradient_surface, track_rect.topleft)
 
         knob_margin = max(3, track_rect.height // 14)
         knob_radius = track_rect.height // 2 - knob_margin
 
-        if self.state:
-            knob_center_x = track_rect.right - knob_margin - knob_radius
-        else:
-            knob_center_x = track_rect.left + knob_margin + knob_radius
+        left_center_x = track_rect.left + knob_margin + knob_radius
+        right_center_x = track_rect.right - knob_margin - knob_radius
+        knob_center_x = int(left_center_x + (right_center_x - left_center_x) * progress)
 
         knob_center_y = track_rect.centery
 
-        shadow_offset_x = 2 if self.state else 1
+        shadow_offset_x = int(1 + progress)
         shadow_offset_y = 4
         self._draw_soft_shadow(
             surface,
