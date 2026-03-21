@@ -1,7 +1,11 @@
 import pygame
 from .UIComponent import UIComponent
 from .Text import Text
+from .Widget import Widget
+from .Button import Button
 import time
+import sys
+import subprocess
 
 """ 
 class TextInput2(UIComponent):
@@ -128,6 +132,60 @@ BINARY_ONLY = 4
 OCTAL_ONLY = 5
 
 
+class TextInputContextMenu(Widget):
+    def __init__(self, owner_input: "TextInput", pos, size=(130, 70), z_index=10_000):
+        super().__init__(
+            rect=(pos[0], pos[1], size[0], size[1]),
+            z_index=z_index,
+            color=(245, 245, 245),
+            border_color=(120, 120, 120),
+            hover_color=(245, 245, 245),
+            color_active=(245, 245, 245),
+        )
+        self.owner_input = owner_input
+
+        button_width = size[0] - 8
+        copy_button = Button(
+            text_str="Kopyala",
+            pos=(4, 4),
+            size=(button_width, 28),
+            color=(228, 228, 228),
+            hover_color=(205, 205, 205),
+            border_color=(160, 160, 160),
+            text_color=(0, 0, 0),
+            padding=(12, 5),
+        )
+        paste_button = Button(
+            text_str="Yapistir",
+            pos=(4, 36),
+            size=(button_width, 28),
+            color=(228, 228, 228),
+            hover_color=(205, 205, 205),
+            border_color=(160, 160, 160),
+            text_color=(0, 0, 0),
+            padding=(12, 5),
+        )
+
+        copy_button.click_bind(self._on_copy)
+        paste_button.click_bind(self._on_paste)
+
+        self.add_child(copy_button)
+        self.add_child(paste_button)
+
+    def _on_copy(self):
+        self.owner_input.prepare_context_action_for_copy()
+        self.owner_input.copy_selected_text()
+        self.owner_input.close_context_menu()
+
+    def _on_paste(self):
+        self.owner_input.prepare_context_action_for_paste()
+        self.owner_input.paste_from_clipboard()
+        self.owner_input.close_context_menu()
+
+    def close(self):
+        self.owner_input.close_context_menu()
+
+
 
 class TextInput(UIComponent):
     def __init__(
@@ -177,9 +235,169 @@ class TextInput(UIComponent):
         self._caret_timer = 0
         self._caret_interval = 0.5
         self.last_blinked_at = time.time()
+        self.context_menu: TextInputContextMenu | None = None
+        self._clipboard_cache = ""
+        self._context_click_index = self.cursor_index
 
         #Keyboard repeat settings
         pygame.key.set_repeat(400, 50)
+
+    def _ensure_scrap(self):
+        try:
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+            return True
+        except Exception:
+            return False
+
+    def _set_os_clipboard_text(self, text: str):
+        if sys.platform == "darwin":
+            try:
+                process = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+                process.communicate(text.encode("utf-8"))
+                return process.returncode == 0
+            except Exception:
+                return False
+        return False
+
+    def _get_os_clipboard_text(self):
+        if sys.platform == "darwin":
+            try:
+                result = subprocess.run(
+                    ["pbpaste"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    return None
+                return result.stdout
+            except Exception:
+                return None
+        return None
+
+    def copy_selected_text(self):
+        text_to_copy = self.get_selected_text() if self.has_selection() else self.text_value
+        if not text_to_copy:
+            return
+
+        self._clipboard_cache = text_to_copy
+
+        if self._ensure_scrap():
+            try:
+                pygame.scrap.put(pygame.SCRAP_TEXT, text_to_copy.encode("utf-8"))
+            except Exception:
+                pass
+
+        self._set_os_clipboard_text(text_to_copy)
+
+    def paste_from_clipboard(self):
+        paste_text = None
+
+        os_clipboard_text = self._get_os_clipboard_text()
+        if os_clipboard_text:
+            paste_text = os_clipboard_text
+
+        try:
+            if not paste_text and self._ensure_scrap():
+                raw_text = pygame.scrap.get(pygame.SCRAP_TEXT)
+                if raw_text is not None:
+                    paste_text = raw_text.decode("utf-8", errors="ignore").replace("\x00", "")
+        except Exception:
+            paste_text = None
+
+        if not paste_text:
+            paste_text = self._clipboard_cache
+
+        try:
+            if not paste_text:
+                return
+
+            # Paste davranisi: secili kisim varsa once sil, sonra yeni icerigi ekle.
+            if self.has_selection():
+                self.delete_selection()
+
+            filtered_text = ""
+            if self.allowed_char_mode == ALLOW_ALL_CHARS:
+                filtered_text = paste_text
+            elif self.allowed_char_mode == TEXT_ONLY:
+                filtered_text = "".join(ch for ch in paste_text if not ch.isnumeric())
+            elif self.allowed_char_mode == NUMBER_ONLY:
+                filtered_text = "".join(ch for ch in paste_text if ch.isnumeric())
+            elif self.allowed_char_mode == HEX_ONLY:
+                filtered_text = "".join(
+                    ch for ch in paste_text if ch.isnumeric() or ch.capitalize() in "ABCDEF"
+                )
+            elif self.allowed_char_mode == BINARY_ONLY:
+                filtered_text = "".join(ch for ch in paste_text if ch in "10")
+            elif self.allowed_char_mode == OCTAL_ONLY:
+                filtered_text = "".join(ch for ch in paste_text if ch in "12345678")
+
+            if filtered_text:
+                self.insert_text(filtered_text)
+
+            self.text.set_text(self.text_value)
+        except Exception:
+            pass
+
+    def prepare_context_action_for_copy(self):
+        # Context menuden sonra fokus tekrar TextInput'a donmeli.
+        if self.ui_manager is not None:
+            if self.ui_manager.focused and self.ui_manager.focused != self:
+                self.ui_manager.focused.on_blur()
+            self.ui_manager.focused = self
+
+        self.on_focus()
+
+    def prepare_context_action_for_paste(self):
+        # Context menuden sonra fokus tekrar TextInput'a donmeli.
+        self.prepare_context_action_for_copy()
+
+        # Secim varsa paste secimi replace etsin (selection korunur).
+        # Secim yoksa menu acilan konumdaki index'e paste yap.
+        if not self.has_selection():
+            self.cursor_index = self._context_click_index
+
+    def open_context_menu(self, pos):
+        if self.ui_manager is None:
+            return
+
+        self.close_context_menu()
+
+        root_rect = self.ui_manager.root.absolute_rect
+        menu_width, menu_height = 130, 70
+        menu_x = pos[0]
+        menu_y = pos[1]
+
+        max_x = root_rect[0] + root_rect[2] - menu_width
+        max_y = root_rect[1] + root_rect[3] - menu_height
+
+        if menu_x > max_x:
+            menu_x = max_x
+        if menu_y > max_y:
+            menu_y = max_y
+
+        menu_x = max(root_rect[0], menu_x)
+        menu_y = max(root_rect[1], menu_y)
+
+        self._context_click_index = self._mouse_to_index(pos[0])
+
+        self.context_menu = TextInputContextMenu(self, (menu_x, menu_y))
+        self.ui_manager.root.add_child(self.context_menu)
+        self.ui_manager.modal = self.context_menu
+
+    def close_context_menu(self):
+        if self.context_menu is None:
+            return
+
+        menu_parent = self.context_menu.parent
+        if menu_parent is not None and self.context_menu in menu_parent.children:
+            menu_parent.children.remove(self.context_menu)
+
+        if self.ui_manager is not None and self.ui_manager.modal is self.context_menu:
+            self.ui_manager.modal = None
+
+        self.context_menu = None
 
     
     def _mouse_to_index(self, mouse_x):
@@ -204,7 +422,24 @@ class TextInput(UIComponent):
 
 
     def handle_event(self, event:pygame.event.Event):
-        if not self.focused or not self.enabled:
+        if not self.enabled:
+            return
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            button = getattr(event, "button", None)
+
+            if button == 3:
+                # Sag tik: context-menu ac
+                clicked_index = self._mouse_to_index(event.pos[0])
+                self._context_click_index = clicked_index
+
+                # Secim yoksa imleci sag tiklanan pozisyona tasir.
+                if not self.has_selection():
+                    self.cursor_index = clicked_index
+                self.open_context_menu(event.pos)
+                return
+
+        if not self.focused:
             return
 
         # MOUSE DRAG SELECTION
@@ -215,21 +450,59 @@ class TextInput(UIComponent):
                 self.cursor_index = idx
 
         if event.type == pygame.MOUSEBUTTONUP:
-            self.dragging = False
-            if self.selection_start == self.selection_end:
-                self.selection_start = self.selection_end = None
-            #print(self.get_selected_text())
-            #print("mouseup tetiklendi")
+            button = getattr(event, "button", None)
+
+            if button == 1:
+                # Sol tik birakma: secim drag'i bitir
+                self.dragging = False
+                if self.selection_start == self.selection_end:
+                    self.selection_start = self.selection_end = None
+                #print(self.get_selected_text())
+                #print("mouseup tetiklendi")
+            elif button == 2:
+                # Orta tik birakma: ileride davranis eklenebilir
+                pass
+            elif button == 3:
+                # Sag tik birakma: ileride context-menu davranisi eklenebilir
+                pass
+            else:
+                # Diger butonlar: simdilik islenmiyor
+                pass
         
         if event.type == pygame.MOUSEBUTTONDOWN:
-            self.dragging = True
-            self.cursor_index = self._mouse_to_index(event.pos[0])
-            self.selection_start = self.cursor_index
-            self.selection_end = None
-            #print("mousedown tetiklendi")
+            button = getattr(event, "button", None)
+
+            if button == 1:
+                # Sol tik: cursor'u konumla ve secimi baslat
+                self.dragging = True
+                self.cursor_index = self._mouse_to_index(event.pos[0])
+                self.selection_start = self.cursor_index
+                self.selection_end = None
+                #print("mousedown tetiklendi")
+            elif button == 2:
+                # Orta tik: ileride davranis eklenebilir
+                pass
+            elif button == 3:
+                # Sag tik birakma: context-menu zaten mousedown'da aciliyor
+                pass
+            else:
+                # Diger butonlar: simdilik islenmiyor
+                pass
 
 
         if event.type == pygame.KEYDOWN:
+            mods = getattr(event, "mod", pygame.key.get_mods())
+            has_ctrl_or_cmd = bool(mods & (pygame.KMOD_CTRL | pygame.KMOD_META))
+
+            # Kopyala / Yapistir kisayollari (Windows/Linux: Ctrl, macOS: Command)
+            if has_ctrl_or_cmd and event.key == pygame.K_c:
+                self.copy_selected_text()
+                return
+
+            if has_ctrl_or_cmd and event.key == pygame.K_v:
+                self.paste_from_clipboard()
+                self.text.set_text(self.text_value)
+                return
 
             # BACKSPACE
             if event.key == pygame.K_BACKSPACE:
@@ -463,9 +736,22 @@ class TextInput2D(UIComponent):
             self.cursor_line, self.cursor_col = line, col
 
         if event.type == pygame.MOUSEBUTTONUP:
-            self.dragging = False
-            if self.selection_start == self.selection_end:
-                self.selection_start = self.selection_end = None
+            button = getattr(event, "button", None)
+
+            if button == 1:
+                # Sol tik birakma: secim drag'i bitir
+                self.dragging = False
+                if self.selection_start == self.selection_end:
+                    self.selection_start = self.selection_end = None
+            elif button == 2:
+                # Orta tik birakma: ileride davranis eklenebilir
+                pass
+            elif button == 3:
+                # Sag tik birakma: ileride davranis eklenebilir
+                pass
+            else:
+                # Diger butonlar: simdilik islenmiyor
+                pass
 
         if event.type == pygame.KEYDOWN:
             # BACKSPACE

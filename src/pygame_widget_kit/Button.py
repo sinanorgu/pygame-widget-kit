@@ -81,10 +81,36 @@ class Button(UIComponent):
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
-            self.active = True
+            button = getattr(event, "button", None)
+
+            if button == 1:
+                # Sol tik: butonu active yap
+                self.active = True
+            elif button == 2:
+                # Orta tik: ileride davranis eklenebilir
+                pass
+            elif button == 3:
+                # Sag tik: ileride davranis eklenebilir
+                pass
+            else:
+                # Diger butonlar: simdilik islenmiyor
+                pass
 
         elif event.type == pygame.MOUSEBUTTONUP:
-            self.active = False
+            button = getattr(event, "button", None)
+
+            if button == 1:
+                # Sol tik birakma: active'i kapat
+                self.active = False
+            elif button == 2:
+                # Orta tik birakma: ileride davranis eklenebilir
+                pass
+            elif button == 3:
+                # Sag tik birakma: ileride davranis eklenebilir
+                pass
+            else:
+                # Diger butonlar: simdilik islenmiyor
+                pass
 
     def on_click(self, event):
         if self.click_function is not None:

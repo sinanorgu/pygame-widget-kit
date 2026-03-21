@@ -52,42 +52,100 @@ class UIManager:
         # MOUSE BUTTON DOWN
         # -------------------------
         if event.type == pygame.MOUSEBUTTONDOWN:
-
             target = self.hit_test(root, event.pos)
+            button = getattr(event, "button", None)
 
-            # 👉 Modal açık ama DIŞINA tıklandıysa
-            if self.modal and not target:
-                # modal kapatılır
-                if hasattr(self.modal, "close"):
-                    self.modal.close()
-                self.modal = None
-                return
+            if button == 1:
+                # Sol tik: mevcut click/focus davranisi
+                # 👉 Modal açık ama DIŞINA tıklandıysa
+                if self.modal and not target:
+                    # modal kapatılır
+                    if hasattr(self.modal, "close"):
+                        self.modal.close()
+                    self.modal = None
+                    return
 
-            if target:
-                self.active = target
-                target.active = True
-                target.handle_event(event)
+                if target:
+                    self.active = target
+                    target.active = True
+                    target.handle_event(event)
 
-                # focus yönetimi
-                if self.focused and self.focused != target:
-                    self.focused.on_blur()
+                    # focus yönetimi
+                    if self.focused and self.focused != target:
+                        self.focused.on_blur()
 
-                target.on_focus()
-                self.focused = target
+                    target.on_focus()
+                    self.focused = target
+
+            elif button == 2:
+                # Orta tik (wheel click): ileride ozel davranis eklenebilir
+                # Modal açıkken dışına tıklandıysa modal kapatılır
+                if self.modal and not target:
+                    if hasattr(self.modal, "close"):
+                        self.modal.close()
+                    self.modal = None
+                pass
+
+            elif button == 3:
+                # Sag tik: ileride context-menu vb. davranis eklenebilir
+                # Modal açıkken dışına tıklandıysa modal kapatılır
+                if self.modal and not target:
+                    if hasattr(self.modal, "close"):
+                        self.modal.close()
+                    self.modal = None
+                    return
+
+                # Sağ tık event'i hedef component'e iletilir (örn: context-menu açma)
+                if target:
+                    target.handle_event(event)
+
+                    # Sag tikla da focus alinabilmesi icin
+                    if self.focused and self.focused != target:
+                        self.focused.on_blur()
+                    target.on_focus()
+                    self.focused = target
+
+            else:
+                # Diger butonlar (ornegin wheel up/down): simdilik islenmiyor
+                # Modal açıkken dışına tıklandıysa modal kapatılır
+                if self.modal and not target:
+                    if hasattr(self.modal, "close"):
+                        self.modal.close()
+                    self.modal = None
+                pass
+
+            return
 
         # -------------------------
         # MOUSE BUTTON UP
         # -------------------------
         elif event.type == pygame.MOUSEBUTTONUP:
+            button = getattr(event, "button", None)
 
-            if self.active:
-                self.active.active = False
+            if button == 1:
+                # Sol tik birakma: click tamamlanmasi
+                if self.active:
+                    self.active.active = False
 
-                # click sayılır mı?
-                if self.active.is_in_rect(event.pos):
-                    self.active.on_click(event)
+                    # click sayılır mı?
+                    if self.active.is_in_rect(event.pos):
+                        self.active.on_click(event)
 
-                self.active = None
+                    self.active = None
+
+            elif button == 2:
+                # Orta tik birakma: ileride ozel davranis eklenebilir
+                pass
+
+            elif button == 3:
+                # Sag tik birakma: ileride context-menu acilisi vb. eklenebilir
+                pass
+
+            else:
+                # Diger mouse butonlari: simdilik islenmiyor
+                pass
+
+            return
 
         # -------------------------
         # MOUSE MOVE (HOVER)
@@ -106,6 +164,9 @@ class UIManager:
 
             if target:
                 target.hovered = True
+
+            if self.active and self.active.visible and self.active.enabled:
+                self.active.handle_event(event)
 
         # -------------------------
         # KEYBOARD
