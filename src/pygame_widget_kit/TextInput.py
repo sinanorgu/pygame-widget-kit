@@ -248,6 +248,8 @@ class TextInput(UIComponent):
         self._redo_stack = []
         self._max_history = 200
         self._scroll_x = 0
+        self._typing_burst_active = False
+        self._typing_burst_last_cursor = None
 
         #Keyboard repeat settings
         pygame.key.set_repeat(400, 50)
@@ -468,6 +470,7 @@ class TextInput(UIComponent):
 
     def _restore_state(self, state):
         self.text_value, self.cursor_index, self.selection_start, self.selection_end = state
+        self._reset_typing_burst()
         self._ensure_cursor_visible()
 
     def _record_undo_state(self):
@@ -479,6 +482,39 @@ class TextInput(UIComponent):
         if len(self._undo_stack) > self._max_history:
             self._undo_stack.pop(0)
         self._redo_stack.clear()
+
+    def _reset_typing_burst(self):
+        self._typing_burst_active = False
+        self._typing_burst_last_cursor = None
+
+    def _insert_typed_char(self, ch: str):
+        is_word_char = self._is_word_char(ch)
+        should_continue_word_burst = (
+            is_word_char
+            and self._typing_burst_active
+            and self._typing_burst_last_cursor == self.cursor_index
+            and not self.has_selection()
+        )
+
+        if not should_continue_word_burst:
+            self._record_undo_state()
+
+        if self.has_selection():
+            self.delete_selection(record_history=False)
+
+        self.text_value = (
+            self.text_value[:self.cursor_index]
+            + ch
+            + self.text_value[self.cursor_index:]
+        )
+        self.cursor_index += 1
+        self._ensure_cursor_visible()
+
+        if is_word_char:
+            self._typing_burst_active = True
+            self._typing_burst_last_cursor = self.cursor_index
+        else:
+            self._reset_typing_burst()
 
     def undo(self):
         if not self._undo_stack:
@@ -560,17 +596,20 @@ class TextInput(UIComponent):
         self.selection_start = start
         self.selection_end = end
         self.cursor_index = end
+        self._reset_typing_burst()
         self._ensure_cursor_visible()
 
     def _select_all(self):
         self.selection_start = 0
         self.selection_end = len(self.text_value)
         self.cursor_index = len(self.text_value)
+        self._reset_typing_burst()
         self._ensure_cursor_visible()
 
     def _clear_selection(self):
         self.selection_start = None
         self.selection_end = None
+        self._reset_typing_burst()
 
     def _move_cursor(self, target_index: int, keep_selection: bool):
         target_index = max(0, min(target_index, len(self.text_value)))
@@ -583,11 +622,13 @@ class TextInput(UIComponent):
             self._clear_selection()
 
         self.cursor_index = target_index
+        self._reset_typing_burst()
         self._ensure_cursor_visible()
 
     def _delete_prev_word(self):
         start = self._prev_word_index(self.cursor_index)
         if start < self.cursor_index:
+            self._reset_typing_burst()
             self._record_undo_state()
             self.text_value = self.text_value[:start] + self.text_value[self.cursor_index:]
             self.cursor_index = start
@@ -596,12 +637,14 @@ class TextInput(UIComponent):
     def _delete_next_word(self):
         end = self._next_word_index(self.cursor_index)
         if end > self.cursor_index:
+            self._reset_typing_burst()
             self._record_undo_state()
             self.text_value = self.text_value[:self.cursor_index] + self.text_value[end:]
             self._ensure_cursor_visible()
 
     def _delete_to_line_start(self):
         if self.cursor_index > 0:
+            self._reset_typing_burst()
             self._record_undo_state()
             self.text_value = self.text_value[self.cursor_index:]
             self.cursor_index = 0
@@ -609,6 +652,7 @@ class TextInput(UIComponent):
 
     def _delete_to_line_end(self):
         if self.cursor_index < len(self.text_value):
+            self._reset_typing_burst()
             self._record_undo_state()
             self.text_value = self.text_value[:self.cursor_index]
             self._ensure_cursor_visible()
@@ -616,6 +660,7 @@ class TextInput(UIComponent):
     def _delete_prev_char(self):
         if self.cursor_index <= 0:
             return
+        self._reset_typing_burst()
         self._record_undo_state()
         self.text_value = (
             self.text_value[:self.cursor_index - 1]
@@ -627,6 +672,7 @@ class TextInput(UIComponent):
     def _delete_next_char(self):
         if self.cursor_index >= len(self.text_value):
             return
+        self._reset_typing_burst()
         self._record_undo_state()
         self.text_value = (
             self.text_value[:self.cursor_index]
@@ -637,6 +683,7 @@ class TextInput(UIComponent):
     def cut_selected_text(self):
         if not self.has_selection():
             return
+        self._reset_typing_burst()
         self.copy_selected_text()
         self.delete_selection()
     
@@ -657,6 +704,7 @@ class TextInput(UIComponent):
             button = getattr(event, "button", None)
 
             if button == 3:
+                self._reset_typing_burst()
                 # Sag tik: context-menu ac
                 clicked_index = self._mouse_to_index(event.pos[0])
                 self._context_click_index = clicked_index
@@ -674,6 +722,7 @@ class TextInput(UIComponent):
         # MOUSE DRAG SELECTION
         if event.type == pygame.MOUSEMOTION:
             if self.dragging:
+                self._reset_typing_burst()
                 idx = self._mouse_to_index(event.pos[0])
                 self.selection_end = idx
                 self.cursor_index = idx
@@ -683,6 +732,7 @@ class TextInput(UIComponent):
             button = getattr(event, "button", None)
 
             if button == 1:
+                self._reset_typing_burst()
                 # Sol tik birakma: secim drag'i bitir
                 self.dragging = False
                 if self.selection_start == self.selection_end:
@@ -703,6 +753,8 @@ class TextInput(UIComponent):
             button = getattr(event, "button", None)
 
             if button == 1:
+                mods = getattr(event, "mod", pygame.key.get_mods())
+                has_shift = bool(mods & pygame.KMOD_SHIFT)
                 now = time.time()
                 click_pos = event.pos
                 dx = click_pos[0] - self._last_click_pos[0]
@@ -728,9 +780,16 @@ class TextInput(UIComponent):
                     self.dragging = False
                 else:
                     self.dragging = True
-                    self.cursor_index = click_index
-                    self.selection_start = self.cursor_index
-                    self.selection_end = None
+                    if has_shift:
+                        anchor = self.selection_start if self.selection_start is not None else self.cursor_index
+                        self.selection_start = anchor
+                        self.selection_end = click_index
+                        self.cursor_index = click_index
+                    else:
+                        self.cursor_index = click_index
+                        self.selection_start = self.cursor_index
+                        self.selection_end = None
+                    self._reset_typing_burst()
                     self._ensure_cursor_visible()
             elif button == 2:
                 # Orta tik: ileride davranis eklenebilir
@@ -753,15 +812,18 @@ class TextInput(UIComponent):
 
             # Kopyala / Yapistir kisayollari (Windows/Linux: Ctrl, macOS: Command)
             if has_ctrl_or_cmd and event.key == pygame.K_c:
+                self._reset_typing_burst()
                 self.copy_selected_text()
                 return
 
             if has_ctrl_or_cmd and event.key == pygame.K_v:
+                self._reset_typing_burst()
                 self.paste_from_clipboard()
                 self.text.set_text(self.text_value)
                 return
 
             if has_ctrl_or_cmd and event.key == pygame.K_x:
+                self._reset_typing_burst()
                 self.cut_selected_text()
                 self.text.set_text(self.text_value)
                 return
@@ -772,6 +834,7 @@ class TextInput(UIComponent):
                 return
 
             if has_ctrl_or_cmd and event.key == pygame.K_z:
+                self._reset_typing_burst()
                 if has_shift:
                     self.redo()
                 else:
@@ -780,6 +843,7 @@ class TextInput(UIComponent):
                 return
 
             if has_ctrl and not has_cmd and event.key == pygame.K_y:
+                self._reset_typing_burst()
                 self.redo()
                 self.text.set_text(self.text_value)
                 return
@@ -847,22 +911,22 @@ class TextInput(UIComponent):
             elif event.unicode and event.unicode.isprintable():
                 c:str = event.unicode
                 if self.allowed_char_mode == ALLOW_ALL_CHARS:
-                    self.insert_text(c)
+                    self._insert_typed_char(c)
                 elif self.allowed_char_mode == TEXT_ONLY:
                     if c.isnumeric() == False:
-                        self.insert_text(c)
+                        self._insert_typed_char(c)
                 elif self.allowed_char_mode == NUMBER_ONLY:
                     if c.isnumeric():
-                        self.insert_text(c)
+                        self._insert_typed_char(c)
                 elif self.allowed_char_mode == HEX_ONLY:
                     if c.isnumeric() or c.capitalize() in "ABCDEF":
-                        self.insert_text(c)
+                        self._insert_typed_char(c)
                 elif self.allowed_char_mode == BINARY_ONLY:
                     if c in "10":
-                        self.insert_text(c)
+                        self._insert_typed_char(c)
                 elif self.allowed_char_mode == OCTAL_ONLY:
                     if c in "12345678":
-                        self.insert_text(c)
+                        self._insert_typed_char(c)
                 
                 
                 
@@ -891,6 +955,7 @@ class TextInput(UIComponent):
 
     def delete_selection(self, record_history=True):
         a, b = self.get_selection_range()
+        self._reset_typing_burst()
         if record_history:
             self._record_undo_state()
         self.text_value = self.text_value[:a] + self.text_value[b:]
@@ -899,6 +964,7 @@ class TextInput(UIComponent):
         self._ensure_cursor_visible()
 
     def insert_text(self, s, record_history=True):
+        self._reset_typing_burst()
         if self.has_selection():
             self.delete_selection(record_history=record_history)
             record_history = False
