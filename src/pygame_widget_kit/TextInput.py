@@ -223,6 +223,7 @@ class TextInput(UIComponent):
             text_color=self.text_color
         )
         self.add_child(self.text)
+        self.text.visible = False
 
         # caret & selection
         self.cursor_index = len(self.text_value)
@@ -246,6 +247,7 @@ class TextInput(UIComponent):
         self._undo_stack = []
         self._redo_stack = []
         self._max_history = 200
+        self._scroll_x = 0
 
         #Keyboard repeat settings
         pygame.key.set_repeat(400, 50)
@@ -413,7 +415,7 @@ class TextInput(UIComponent):
 
     
     def _mouse_to_index(self, mouse_x):
-        local_x = mouse_x - self.absolute_rect[0] - self.padding
+        local_x = mouse_x - self.absolute_rect[0] - self.padding + self._scroll_x
         if local_x <= 0:
             return 0
 
@@ -423,6 +425,35 @@ class TextInput(UIComponent):
                 return i
 
         return len(self.text_value)
+
+    def _get_inner_rect(self):
+        inner_x = self.absolute_rect[0] + self.padding
+        inner_y = self.absolute_rect[1] + self.padding
+        inner_w = max(1, self.absolute_rect[2] - (self.padding * 2))
+        inner_h = max(1, self.absolute_rect[3] - (self.padding * 2))
+        return pygame.Rect(inner_x, inner_y, inner_w, inner_h)
+
+    def _text_width_until(self, index: int) -> int:
+        clamped = max(0, min(index, len(self.text_value)))
+        return self.text.font.size(self.text_value[:clamped])[0]
+
+    def _ensure_cursor_visible(self):
+        inner_rect = self._get_inner_rect()
+        inner_w = inner_rect.width
+
+        total_text_width = self.text.render.get_width()
+        max_scroll = max(0, total_text_width - inner_w)
+
+        caret_x_in_text = self._text_width_until(self.cursor_index)
+        left_visible = self._scroll_x
+        right_visible = self._scroll_x + inner_w - 2
+
+        if caret_x_in_text < left_visible:
+            self._scroll_x = caret_x_in_text
+        elif caret_x_in_text > right_visible:
+            self._scroll_x = caret_x_in_text - (inner_w - 2)
+
+        self._scroll_x = max(0, min(self._scroll_x, max_scroll))
 
     def _is_word_char(self, ch: str) -> bool:
         return ch.isalnum() or ch == "_"
@@ -437,6 +468,7 @@ class TextInput(UIComponent):
 
     def _restore_state(self, state):
         self.text_value, self.cursor_index, self.selection_start, self.selection_end = state
+        self._ensure_cursor_visible()
 
     def _record_undo_state(self):
         state = self._snapshot_state()
@@ -528,11 +560,13 @@ class TextInput(UIComponent):
         self.selection_start = start
         self.selection_end = end
         self.cursor_index = end
+        self._ensure_cursor_visible()
 
     def _select_all(self):
         self.selection_start = 0
         self.selection_end = len(self.text_value)
         self.cursor_index = len(self.text_value)
+        self._ensure_cursor_visible()
 
     def _clear_selection(self):
         self.selection_start = None
@@ -549,6 +583,7 @@ class TextInput(UIComponent):
             self._clear_selection()
 
         self.cursor_index = target_index
+        self._ensure_cursor_visible()
 
     def _delete_prev_word(self):
         start = self._prev_word_index(self.cursor_index)
@@ -556,23 +591,27 @@ class TextInput(UIComponent):
             self._record_undo_state()
             self.text_value = self.text_value[:start] + self.text_value[self.cursor_index:]
             self.cursor_index = start
+            self._ensure_cursor_visible()
 
     def _delete_next_word(self):
         end = self._next_word_index(self.cursor_index)
         if end > self.cursor_index:
             self._record_undo_state()
             self.text_value = self.text_value[:self.cursor_index] + self.text_value[end:]
+            self._ensure_cursor_visible()
 
     def _delete_to_line_start(self):
         if self.cursor_index > 0:
             self._record_undo_state()
             self.text_value = self.text_value[self.cursor_index:]
             self.cursor_index = 0
+            self._ensure_cursor_visible()
 
     def _delete_to_line_end(self):
         if self.cursor_index < len(self.text_value):
             self._record_undo_state()
             self.text_value = self.text_value[:self.cursor_index]
+            self._ensure_cursor_visible()
 
     def _delete_prev_char(self):
         if self.cursor_index <= 0:
@@ -583,6 +622,7 @@ class TextInput(UIComponent):
             + self.text_value[self.cursor_index:]
         )
         self.cursor_index -= 1
+        self._ensure_cursor_visible()
 
     def _delete_next_char(self):
         if self.cursor_index >= len(self.text_value):
@@ -592,6 +632,7 @@ class TextInput(UIComponent):
             self.text_value[:self.cursor_index]
             + self.text_value[self.cursor_index + 1:]
         )
+        self._ensure_cursor_visible()
 
     def cut_selected_text(self):
         if not self.has_selection():
@@ -623,6 +664,7 @@ class TextInput(UIComponent):
                 # Secim yoksa imleci sag tiklanan pozisyona tasir.
                 if not self.has_selection():
                     self.cursor_index = clicked_index
+                    self._ensure_cursor_visible()
                 self.open_context_menu(event.pos)
                 return
 
@@ -635,6 +677,7 @@ class TextInput(UIComponent):
                 idx = self._mouse_to_index(event.pos[0])
                 self.selection_end = idx
                 self.cursor_index = idx
+                self._ensure_cursor_visible()
 
         if event.type == pygame.MOUSEBUTTONUP:
             button = getattr(event, "button", None)
@@ -688,6 +731,7 @@ class TextInput(UIComponent):
                     self.cursor_index = click_index
                     self.selection_start = self.cursor_index
                     self.selection_end = None
+                    self._ensure_cursor_visible()
             elif button == 2:
                 # Orta tik: ileride davranis eklenebilir
                 pass
@@ -852,6 +896,7 @@ class TextInput(UIComponent):
         self.text_value = self.text_value[:a] + self.text_value[b:]
         self.cursor_index = a
         self.selection_start = self.selection_end = None
+        self._ensure_cursor_visible()
 
     def insert_text(self, s, record_history=True):
         if self.has_selection():
@@ -870,6 +915,7 @@ class TextInput(UIComponent):
             + self.text_value[self.cursor_index:]
         )
         self.cursor_index += len(s)
+        self._ensure_cursor_visible()
     def update(self):
         if not self.focused:
             self.caret_visible = False
@@ -883,12 +929,20 @@ class TextInput(UIComponent):
     def draw(self, surface):
         super().draw(surface)
         self.update()
+        self._ensure_cursor_visible()
+
+        inner_rect = self._get_inner_rect()
+        text_x = self.absolute_rect[0] + self.padding - self._scroll_x
+        text_y = self.absolute_rect[1] + self.padding
+
+        prev_clip = surface.get_clip()
+        surface.set_clip(inner_rect)
 
         # SELECTION
         if self.has_selection():
             a, b = self.get_selection_range()
-            x1 = self.absolute_rect[0] + self.padding + self.text.font.size(self.text_value[:a])[0]
-            x2 = self.absolute_rect[0] + self.padding + self.text.font.size(self.text_value[:b])[0]
+            x1 = self.absolute_rect[0] + self.padding + self._text_width_until(a) - self._scroll_x
+            x2 = self.absolute_rect[0] + self.padding + self._text_width_until(b) - self._scroll_x
 
             h = self.text.render.get_height()
             y = self.absolute_rect[1] + self.padding
@@ -899,14 +953,11 @@ class TextInput(UIComponent):
                 (x1, y, x2 - x1, h)
             )
 
-            # redraw text over selection
-            self.text.draw(surface)
+        surface.blit(self.text.render, (text_x, text_y))
 
         # CARET
         if self.focused and self.caret_visible:
-            cx = self.absolute_rect[0] + self.padding + self.text.font.size(
-                self.text_value[:self.cursor_index]
-            )[0]
+            cx = self.absolute_rect[0] + self.padding + self._text_width_until(self.cursor_index) - self._scroll_x
             cy = self.absolute_rect[1] + self.padding
 
             pygame.draw.rect(
@@ -914,6 +965,8 @@ class TextInput(UIComponent):
                 self.caret_color,
                 (cx, cy, 2, self.text.render.get_height())
             )
+
+        surface.set_clip(prev_clip)
 
 
 
