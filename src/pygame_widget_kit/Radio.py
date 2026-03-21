@@ -68,6 +68,15 @@ class Radio(Widget):
         for child in self.children:
             child.handle_event(event)
 
+    def draw(self, surface: pygame.Surface):
+        if not self.visible:
+            return
+
+        if self.color is not None:
+            pygame.draw.rect(surface, self.color, self.absolute_rect, 0)
+
+        self.draw_child(surface)
+
 
 
             
@@ -105,6 +114,9 @@ class RadioOption(Button):
         x, y, w, h = self.absolute_rect
         cx = x + self.circle_center_offset[0]
         cy = y + self.circle_center_offset[1]
+
+        if self.color is not None:
+            pygame.draw.rect(surface, self.color, self.absolute_rect, 0)
 
         # hover background
         if self.hovered:

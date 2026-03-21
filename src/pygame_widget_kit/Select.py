@@ -8,7 +8,8 @@ from functools import partial
 
 class SelectOption(Button):
     def __init__(self,value:str, rect, parent_select:"Select", color=(200,200,200),border_color = (127,127,127)):
-        super().__init__(text_str=value,pos=(rect[0],rect[1]),size=(rect[2],rect[3]), color=color,padding=(5,5),text_color=(0,0,0),border_color=border_color)
+        hover_color = tuple(max(c - 20, 0) for c in color)
+        super().__init__(text_str=value,pos=(rect[0],rect[1]),size=(rect[2],rect[3]), color=color, hover_color=hover_color, padding=(5,5),text_color=(0,0,0),border_color=border_color)
         self.value = value
         self.parent_select = parent_select
 

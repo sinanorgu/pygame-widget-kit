@@ -30,9 +30,14 @@ class UIComponent:
 
     def add_child(self, component:"UIComponent"):
         component.parent = self
-        component.ui_manager = self.ui_manager
+        component._set_ui_manager_recursive(self.ui_manager)
         self.children.append(component)
         component.update_absolute_rect()
+
+    def _set_ui_manager_recursive(self, ui_manager):
+        self.ui_manager = ui_manager
+        for child in self.children:
+            child._set_ui_manager_recursive(ui_manager)
     
     def update_absolute_rect(self):
         if self.parent is not None:
