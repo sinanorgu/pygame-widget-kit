@@ -238,6 +238,14 @@ class TextInput(UIComponent):
         self.context_menu: TextInputContextMenu | None = None
         self._clipboard_cache = ""
         self._context_click_index = self.cursor_index
+        self._last_click_time = 0.0
+        self._last_click_pos = (0, 0)
+        self._click_count = 0
+        self._multi_click_interval = 0.35
+        self._multi_click_distance = 6
+        self._undo_stack = []
+        self._redo_stack = []
+        self._max_history = 200
 
         #Keyboard repeat settings
         pygame.key.set_repeat(400, 50)
@@ -313,10 +321,6 @@ class TextInput(UIComponent):
             if not paste_text:
                 return
 
-            # Paste davranisi: secili kisim varsa once sil, sonra yeni icerigi ekle.
-            if self.has_selection():
-                self.delete_selection()
-
             filtered_text = ""
             if self.allowed_char_mode == ALLOW_ALL_CHARS:
                 filtered_text = paste_text
@@ -333,8 +337,16 @@ class TextInput(UIComponent):
             elif self.allowed_char_mode == OCTAL_ONLY:
                 filtered_text = "".join(ch for ch in paste_text if ch in "12345678")
 
+            should_edit = self.has_selection() or bool(filtered_text)
+            if should_edit:
+                self._record_undo_state()
+
+            # Paste davranisi: secili kisim varsa once sil, sonra yeni icerigi ekle.
+            if self.has_selection():
+                self.delete_selection(record_history=False)
+
             if filtered_text:
-                self.insert_text(filtered_text)
+                self.insert_text(filtered_text, record_history=False)
 
             self.text.set_text(self.text_value)
         except Exception:
@@ -411,6 +423,181 @@ class TextInput(UIComponent):
                 return i
 
         return len(self.text_value)
+
+    def _is_word_char(self, ch: str) -> bool:
+        return ch.isalnum() or ch == "_"
+
+    def _snapshot_state(self):
+        return (
+            self.text_value,
+            self.cursor_index,
+            self.selection_start,
+            self.selection_end,
+        )
+
+    def _restore_state(self, state):
+        self.text_value, self.cursor_index, self.selection_start, self.selection_end = state
+
+    def _record_undo_state(self):
+        state = self._snapshot_state()
+        if self._undo_stack and self._undo_stack[-1] == state:
+            return
+
+        self._undo_stack.append(state)
+        if len(self._undo_stack) > self._max_history:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+
+    def undo(self):
+        if not self._undo_stack:
+            return
+
+        current_state = self._snapshot_state()
+        previous_state = self._undo_stack.pop()
+
+        if current_state != previous_state:
+            self._redo_stack.append(current_state)
+            if len(self._redo_stack) > self._max_history:
+                self._redo_stack.pop(0)
+
+        self._restore_state(previous_state)
+
+    def redo(self):
+        if not self._redo_stack:
+            return
+
+        current_state = self._snapshot_state()
+        next_state = self._redo_stack.pop()
+
+        if current_state != next_state:
+            self._undo_stack.append(current_state)
+            if len(self._undo_stack) > self._max_history:
+                self._undo_stack.pop(0)
+
+        self._restore_state(next_state)
+
+    def _find_word_bounds(self, index: int):
+        n = len(self.text_value)
+        if n == 0:
+            return 0, 0
+
+        index = max(0, min(index, n))
+
+        probe = index
+        if probe == n:
+            probe = n - 1
+
+        if probe < 0:
+            return 0, 0
+
+        if not self._is_word_char(self.text_value[probe]):
+            return probe, probe + 1
+
+        start = probe
+        end = probe + 1
+
+        while start > 0 and self._is_word_char(self.text_value[start - 1]):
+            start -= 1
+        while end < n and self._is_word_char(self.text_value[end]):
+            end += 1
+
+        return start, end
+
+    def _next_word_index(self, index: int) -> int:
+        n = len(self.text_value)
+        i = max(0, min(index, n))
+
+        while i < n and self._is_word_char(self.text_value[i]):
+            i += 1
+        while i < n and not self._is_word_char(self.text_value[i]):
+            i += 1
+        return i
+
+    def _prev_word_index(self, index: int) -> int:
+        i = max(0, min(index, len(self.text_value)))
+
+        while i > 0 and not self._is_word_char(self.text_value[i - 1]):
+            i -= 1
+        while i > 0 and self._is_word_char(self.text_value[i - 1]):
+            i -= 1
+        return i
+
+    def _select_range(self, start: int, end: int):
+        start = max(0, min(start, len(self.text_value)))
+        end = max(0, min(end, len(self.text_value)))
+        self.selection_start = start
+        self.selection_end = end
+        self.cursor_index = end
+
+    def _select_all(self):
+        self.selection_start = 0
+        self.selection_end = len(self.text_value)
+        self.cursor_index = len(self.text_value)
+
+    def _clear_selection(self):
+        self.selection_start = None
+        self.selection_end = None
+
+    def _move_cursor(self, target_index: int, keep_selection: bool):
+        target_index = max(0, min(target_index, len(self.text_value)))
+
+        if keep_selection:
+            if self.selection_start is None:
+                self.selection_start = self.cursor_index
+            self.selection_end = target_index
+        else:
+            self._clear_selection()
+
+        self.cursor_index = target_index
+
+    def _delete_prev_word(self):
+        start = self._prev_word_index(self.cursor_index)
+        if start < self.cursor_index:
+            self._record_undo_state()
+            self.text_value = self.text_value[:start] + self.text_value[self.cursor_index:]
+            self.cursor_index = start
+
+    def _delete_next_word(self):
+        end = self._next_word_index(self.cursor_index)
+        if end > self.cursor_index:
+            self._record_undo_state()
+            self.text_value = self.text_value[:self.cursor_index] + self.text_value[end:]
+
+    def _delete_to_line_start(self):
+        if self.cursor_index > 0:
+            self._record_undo_state()
+            self.text_value = self.text_value[self.cursor_index:]
+            self.cursor_index = 0
+
+    def _delete_to_line_end(self):
+        if self.cursor_index < len(self.text_value):
+            self._record_undo_state()
+            self.text_value = self.text_value[:self.cursor_index]
+
+    def _delete_prev_char(self):
+        if self.cursor_index <= 0:
+            return
+        self._record_undo_state()
+        self.text_value = (
+            self.text_value[:self.cursor_index - 1]
+            + self.text_value[self.cursor_index:]
+        )
+        self.cursor_index -= 1
+
+    def _delete_next_char(self):
+        if self.cursor_index >= len(self.text_value):
+            return
+        self._record_undo_state()
+        self.text_value = (
+            self.text_value[:self.cursor_index]
+            + self.text_value[self.cursor_index + 1:]
+        )
+
+    def cut_selected_text(self):
+        if not self.has_selection():
+            return
+        self.copy_selected_text()
+        self.delete_selection()
     
     def on_click(self, event):
         # self.dragging = True
@@ -473,12 +660,34 @@ class TextInput(UIComponent):
             button = getattr(event, "button", None)
 
             if button == 1:
-                # Sol tik: cursor'u konumla ve secimi baslat
-                self.dragging = True
-                self.cursor_index = self._mouse_to_index(event.pos[0])
-                self.selection_start = self.cursor_index
-                self.selection_end = None
-                #print("mousedown tetiklendi")
+                now = time.time()
+                click_pos = event.pos
+                dx = click_pos[0] - self._last_click_pos[0]
+                dy = click_pos[1] - self._last_click_pos[1]
+                close_enough = (dx * dx + dy * dy) <= (self._multi_click_distance * self._multi_click_distance)
+
+                if now - self._last_click_time <= self._multi_click_interval and close_enough:
+                    self._click_count += 1
+                else:
+                    self._click_count = 1
+
+                self._last_click_time = now
+                self._last_click_pos = click_pos
+
+                click_index = self._mouse_to_index(event.pos[0])
+
+                if self._click_count >= 3:
+                    self._select_all()
+                    self.dragging = False
+                elif self._click_count == 2:
+                    start, end = self._find_word_bounds(click_index)
+                    self._select_range(start, end)
+                    self.dragging = False
+                else:
+                    self.dragging = True
+                    self.cursor_index = click_index
+                    self.selection_start = self.cursor_index
+                    self.selection_end = None
             elif button == 2:
                 # Orta tik: ileride davranis eklenebilir
                 pass
@@ -493,6 +702,10 @@ class TextInput(UIComponent):
         if event.type == pygame.KEYDOWN:
             mods = getattr(event, "mod", pygame.key.get_mods())
             has_ctrl_or_cmd = bool(mods & (pygame.KMOD_CTRL | pygame.KMOD_META))
+            has_ctrl = bool(mods & pygame.KMOD_CTRL)
+            has_cmd = bool(mods & pygame.KMOD_META)
+            has_word_mod = bool(mods & (pygame.KMOD_CTRL | pygame.KMOD_ALT))
+            has_shift = bool(mods & pygame.KMOD_SHIFT)
 
             # Kopyala / Yapistir kisayollari (Windows/Linux: Ctrl, macOS: Command)
             if has_ctrl_or_cmd and event.key == pygame.K_c:
@@ -504,29 +717,85 @@ class TextInput(UIComponent):
                 self.text.set_text(self.text_value)
                 return
 
+            if has_ctrl_or_cmd and event.key == pygame.K_x:
+                self.cut_selected_text()
+                self.text.set_text(self.text_value)
+                return
+
+            if has_ctrl_or_cmd and event.key == pygame.K_a:
+                self._select_all()
+                self.text.set_text(self.text_value)
+                return
+
+            if has_ctrl_or_cmd and event.key == pygame.K_z:
+                if has_shift:
+                    self.redo()
+                else:
+                    self.undo()
+                self.text.set_text(self.text_value)
+                return
+
+            if has_ctrl and not has_cmd and event.key == pygame.K_y:
+                self.redo()
+                self.text.set_text(self.text_value)
+                return
+
+            if event.key == pygame.K_ESCAPE:
+                self._clear_selection()
+                self.text.set_text(self.text_value)
+                return
+
             # BACKSPACE
             if event.key == pygame.K_BACKSPACE:
                 if self.has_selection():
                     self.delete_selection()
+                elif has_cmd:
+                    self._delete_to_line_start()
+                elif has_word_mod:
+                    self._delete_prev_word()
                 elif self.cursor_index > 0:
-                    self.text_value = (
-                        self.text_value[:self.cursor_index - 1]
-                        + self.text_value[self.cursor_index:]
-                    )
-                    self.cursor_index -= 1
+                    self._delete_prev_char()
+
+            elif event.key == pygame.K_DELETE:
+                if self.has_selection():
+                    self.delete_selection()
+                elif has_cmd:
+                    self._delete_to_line_end()
+                elif has_word_mod:
+                    self._delete_next_word()
+                elif self.cursor_index < len(self.text_value):
+                    self._delete_next_char()
 
 
             #arrow keys
             elif event.key == pygame.K_UP:
-                self.cursor_index = 0
+                self._move_cursor(0, keep_selection=has_shift)
             elif event.key == pygame.K_DOWN:
-                self.cursor_index = len(self.text_value)
+                self._move_cursor(len(self.text_value), keep_selection=has_shift)
             elif event.key == pygame.K_RIGHT:
-                if self.cursor_index <len(self.text_value):
-                    self.cursor_index+=1
+                if self.has_selection() and not has_shift and not has_word_mod and not has_cmd:
+                    _, end = self.get_selection_range()
+                    self._move_cursor(end, keep_selection=False)
+                else:
+                    if has_cmd:
+                        target = len(self.text_value)
+                    elif has_word_mod:
+                        target = self._next_word_index(self.cursor_index)
+                    else:
+                        target = min(len(self.text_value), self.cursor_index + 1)
+                    self._move_cursor(target, keep_selection=has_shift)
             elif event.key == pygame.K_LEFT:
-                if self.cursor_index > 0:
-                    self.cursor_index-=1
+                if self.has_selection() and not has_shift and not has_word_mod and not has_cmd:
+                    start, _ = self.get_selection_range()
+                    self._move_cursor(start, keep_selection=False)
+                else:
+                    if has_cmd:
+                        target = 0
+                    elif has_word_mod:
+                        target = self._prev_word_index(self.cursor_index)
+                    else:
+                        target = max(0, self.cursor_index - 1)
+                    self._move_cursor(target, keep_selection=has_shift)
             
             
             
@@ -576,15 +845,24 @@ class TextInput(UIComponent):
         except:
             return ""
 
-    def delete_selection(self):
+    def delete_selection(self, record_history=True):
         a, b = self.get_selection_range()
+        if record_history:
+            self._record_undo_state()
         self.text_value = self.text_value[:a] + self.text_value[b:]
         self.cursor_index = a
         self.selection_start = self.selection_end = None
 
-    def insert_text(self, s):
+    def insert_text(self, s, record_history=True):
         if self.has_selection():
-            self.delete_selection()
+            self.delete_selection(record_history=record_history)
+            record_history = False
+
+        if not s:
+            return
+
+        if record_history:
+            self._record_undo_state()
 
         self.text_value = (
             self.text_value[:self.cursor_index]
