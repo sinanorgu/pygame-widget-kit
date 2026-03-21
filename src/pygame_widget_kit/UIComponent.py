@@ -1,7 +1,7 @@
 import pygame
 
 class UIComponent:
-    def __init__(self, rect, style=None,z_index = 0, color = None, border_color:tuple[int,int,int] = (0,255,0),hover_color = None):
+    def __init__(self, rect, style=None,z_index = 0, color = None, border_color:tuple[int,int,int] = (0,255,0),hover_color = None, color_active=None):
         self.rect = rect    
         self.absolute_rect = rect          
         #self.style = style or {}
@@ -20,7 +20,10 @@ class UIComponent:
 
         self.border_color = border_color
         self.show_border = True if border_color is not None else False
-        self.color_active = tuple(max(c - 40, 0) for c in color) if color is not None else None
+        if color_active is None:
+            self.color_active = tuple(max(c - 40, 0) for c in color) if color is not None else None
+        else:
+            self.color_active = color_active
 
         self.color = color
 
@@ -109,7 +112,7 @@ class UIComponent:
                 fill_color = tuple(c // 2 for c in fill_color)
 
         elif self.active:
-            if fill_color is not None:
+            if fill_color is not None and self.color_active is not None:
                 fill_color = self.color_active
 
         elif self.hovered:

@@ -15,9 +15,18 @@ class LayoutContainer(Widget):
         z_index: int = 0,
         color=None,
         border_color=None,
+        color_active=None,
     ):
+        if color_active is None and color is not None:
+            color_active = color
+
         super().__init__(
-            rect=rect, style=None, z_index=z_index, color=color, border_color=border_color
+            rect=rect,
+            style=None,
+            z_index=z_index,
+            color=color,
+            border_color=border_color,
+            color_active=color_active,
         )
         self.spacing = spacing
         self.padding = padding
