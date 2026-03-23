@@ -45,6 +45,14 @@ class UIManager:
 
     def handle_event(self, event: pygame.event.Event):
 
+        def dispatch_scroll_to_nearest_scrollable(component, evt):
+            current = component
+            while current is not None:
+                if getattr(current, "scrollable", False):
+                    current.handle_event(evt)
+                    return
+                current = current.parent
+
         # 🔹 Event'in başlayacağı root
         root = self.modal if self.modal else self.root
 
@@ -54,6 +62,11 @@ class UIManager:
         if event.type == pygame.MOUSEBUTTONDOWN:
             target = self.hit_test(root, event.pos)
             button = getattr(event, "button", None)
+
+            if button in (4, 5):
+                if target:
+                    dispatch_scroll_to_nearest_scrollable(target, event)
+                return
 
             if button == 1:
                 # Sol tik: mevcut click/focus davranisi
@@ -116,6 +129,13 @@ class UIManager:
 
             return
 
+        elif event.type == pygame.MOUSEWHEEL:
+            mouse_pos = pygame.mouse.get_pos()
+            target = self.hit_test(root, mouse_pos)
+            if target:
+                dispatch_scroll_to_nearest_scrollable(target, event)
+            return
+
         # -------------------------
         # MOUSE BUTTON UP
         # -------------------------
@@ -125,6 +145,9 @@ class UIManager:
             if button == 1:
                 # Sol tik birakma: click tamamlanmasi
                 if self.active:
+                    # Active component must receive mouse-up to release drag states
+                    # (e.g. layout scrollbar thumb dragging).
+                    self.active.handle_event(event)
                     self.active.active = False
 
                     # click sayılır mı?

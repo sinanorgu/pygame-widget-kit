@@ -16,6 +16,13 @@ class LayoutContainer(Widget):
         color=None,
         border_color=None,
         color_active=None,
+        scrollable: bool = False,
+        show_scrollbar: bool = True,
+        scrollbar_width: int = 10,
+        wheel_step: int = 32,
+        smooth_scroll: bool = False,
+        smooth_scroll_factor: float = 0.14,
+        smooth_snap_threshold: float = 2.0,
     ):
         if color_active is None and color is not None:
             color_active = color
@@ -33,7 +40,181 @@ class LayoutContainer(Widget):
         self._layout_dirty = True
         self.clip_children = True
 
+        self.scrollable = scrollable
+        self.show_scrollbar = show_scrollbar
+        self.scrollbar_width = max(6, scrollbar_width)
+        self.wheel_step = max(8, wheel_step)
+        self.smooth_scroll = smooth_scroll
+        self.smooth_scroll_factor = max(0.05, min(1.0, smooth_scroll_factor))
+        self.smooth_snap_threshold = max(0.5, float(smooth_snap_threshold))
+
+        self._scroll_y = 0.0
+        self._scroll_target_y = 0.0
+        self._max_scroll = 0.0
+        self._content_height = 0
+
+        self._scrollbar_track_rect = pygame.Rect(0, 0, 0, 0)
+        self._scrollbar_thumb_rect = pygame.Rect(0, 0, 0, 0)
+        self._scrollbar_dragging = False
+        self._scrollbar_drag_offset = 0
+        self._last_smooth_tick_ms = None
+
+    def set_scrollable(self, enabled: bool):
+        self.scrollable = bool(enabled)
+        if not self.scrollable:
+            self._scroll_y = 0.0
+            self._scroll_target_y = 0.0
+            self._max_scroll = 0.0
+            self._scrollbar_dragging = False
+        self.mark_layout_dirty()
+
+    def set_smooth_scroll(self, enabled: bool):
+        self.smooth_scroll = bool(enabled)
+        if not self.smooth_scroll:
+            self._scroll_target_y = self._scroll_y
+        self.mark_layout_dirty()
+
+    def set_scrollbar_visible(self, visible: bool):
+        self.show_scrollbar = bool(visible)
+        self.mark_layout_dirty()
+
+    def _scrollbar_reservation(self):
+        if self.scrollable and self.show_scrollbar:
+            return self.scrollbar_width + 6
+        return 0
+
+    def _viewport_rect_local(self):
+        viewport_w = max(1, self.rect[2] - self.padding * 2 - self._scrollbar_reservation())
+        viewport_h = max(1, self.rect[3] - self.padding * 2)
+        return pygame.Rect(self.padding, self.padding, viewport_w, viewport_h)
+
+    def _viewport_rect_absolute(self):
+        local = self._viewport_rect_local()
+        return pygame.Rect(
+            self.absolute_rect[0] + local.x,
+            self.absolute_rect[1] + local.y,
+            local.width,
+            local.height,
+        )
+
+    def _set_content_height(self, content_height: int):
+        self._content_height = max(0, int(content_height))
+        viewport_h = self._viewport_rect_local().height
+        self._max_scroll = float(max(0, self._content_height - viewport_h))
+        self._scroll_y = max(0.0, min(self._scroll_y, self._max_scroll))
+        self._scroll_target_y = max(0.0, min(self._scroll_target_y, self._max_scroll))
+
+    def _set_scroll_y(self, value: float, sync_target: bool = True):
+        clamped = max(0.0, min(float(value), self._max_scroll))
+        if abs(clamped - self._scroll_y) > 1e-6:
+            self._scroll_y = clamped
+            self.mark_layout_dirty()
+        if sync_target:
+            self._scroll_target_y = clamped
+
+    def _set_scroll_target(self, value: float):
+        clamped = max(0.0, min(float(value), self._max_scroll))
+        self._scroll_target_y = clamped
+        self.mark_layout_dirty()
+
+        if not self.smooth_scroll:
+            self._set_scroll_y(clamped)
+
+    def _tick_smooth_scroll(self):
+        if not self.scrollable or not self.smooth_scroll:
+            self._last_smooth_tick_ms = None
+            return
+
+        if self._scrollbar_dragging:
+            self._scroll_target_y = self._scroll_y
+            self._last_smooth_tick_ms = None
+            return
+
+        now_ms = pygame.time.get_ticks()
+        if self._last_smooth_tick_ms is None:
+            self._last_smooth_tick_ms = now_ms
+            return
+
+        dt = (now_ms - self._last_smooth_tick_ms) / 1000.0
+        self._last_smooth_tick_ms = now_ms
+        if dt <= 0:
+            return
+
+        delta = self._scroll_target_y - self._scroll_y
+        if abs(delta) <= 1e-6:
+            return
+
+        # Child placement is pixel-based, so tiny sub-pixel tails look like
+        # jitter near the end. Snap early for a cleaner finish.
+        if abs(delta) <= self.smooth_snap_threshold:
+            self._set_scroll_y(self._scroll_target_y, sync_target=False)
+            return
+
+        # Normalize smoothing to time so behavior remains stable across FPS.
+        normalized_alpha = 1.0 - pow(1.0 - self.smooth_scroll_factor, max(1.0, dt * 60.0))
+        # Avoid a long "creep" phase near target by increasing pull strength
+        # once we are in the final stretch.
+        if abs(delta) < 24.0:
+            normalized_alpha = max(normalized_alpha, 0.42)
+        step = delta * normalized_alpha
+
+        next_value = self._scroll_y + step
+        if delta > 0:
+            next_value = min(next_value, self._scroll_target_y)
+        else:
+            next_value = max(next_value, self._scroll_target_y)
+
+        self._set_scroll_y(next_value, sync_target=False)
+
+    def _scroll_by(self, delta_y: int):
+        if not self.scrollable or self._max_scroll <= 0:
+            return
+        if self.smooth_scroll:
+            self._set_scroll_target(self._scroll_target_y + delta_y)
+        else:
+            self._set_scroll_y(self._scroll_y + delta_y)
+
+    def _update_scrollbar_geometry(self):
+        self._scrollbar_track_rect = pygame.Rect(0, 0, 0, 0)
+        self._scrollbar_thumb_rect = pygame.Rect(0, 0, 0, 0)
+
+        if not (self.scrollable and self.show_scrollbar and self._max_scroll > 0):
+            return
+
+        viewport = self._viewport_rect_absolute()
+        track_x = self.absolute_rect[0] + self.rect[2] - self.padding - self.scrollbar_width
+        track_y = viewport.y
+        track_h = viewport.height
+        if track_h <= 0:
+            return
+
+        self._scrollbar_track_rect = pygame.Rect(track_x, track_y, self.scrollbar_width, track_h)
+
+        total = max(1, self._content_height)
+        visible = max(1, viewport.height)
+        thumb_h = max(20, int(track_h * (visible / total)))
+        thumb_h = min(track_h, thumb_h)
+
+        travel = max(0, track_h - thumb_h)
+        ratio = 0.0 if self._max_scroll <= 0 else (self._scroll_y / self._max_scroll)
+        thumb_y = track_y + int(travel * ratio)
+        self._scrollbar_thumb_rect = pygame.Rect(track_x, thumb_y, self.scrollbar_width, thumb_h)
+
+    def _draw_scrollbar(self, surface: pygame.Surface):
+        if not (self.scrollable and self.show_scrollbar and self._max_scroll > 0):
+            return
+
+        if self._scrollbar_track_rect.width <= 0 or self._scrollbar_thumb_rect.width <= 0:
+            return
+
+        pygame.draw.rect(surface, (220, 220, 220), self._scrollbar_track_rect, border_radius=4)
+        thumb_color = (140, 140, 140) if not self._scrollbar_dragging else (110, 110, 110)
+        pygame.draw.rect(surface, thumb_color, self._scrollbar_thumb_rect, border_radius=4)
+
     def get_children_clip_rect(self):
+        if self.scrollable:
+            return self._viewport_rect_absolute()
+
         return pygame.Rect(
             self.absolute_rect[0],
             self.absolute_rect[1],
@@ -51,6 +232,8 @@ class LayoutContainer(Widget):
             self.parent.mark_layout_dirty()
 
     def layout_children(self):
+        self._tick_smooth_scroll()
+
         if self._layout_dirty:
             self._layout_dirty = False
             self._do_layout()
@@ -68,6 +251,66 @@ class LayoutContainer(Widget):
     def draw(self, surface: pygame.Surface):
         self.layout_children()
         super().draw(surface)
+        self._update_scrollbar_geometry()
+        self._draw_scrollbar(surface)
+
+    def handle_event(self, event: pygame.event.Event):
+        if not self.visible or not self.enabled or not self.scrollable:
+            return
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            button = getattr(event, "button", None)
+            pos = getattr(event, "pos", None)
+
+            if button in (4, 5):
+                if pos and self._viewport_rect_absolute().collidepoint(pos):
+                    direction = -1 if button == 4 else 1
+                    self._scroll_by(direction * self.wheel_step)
+                return
+
+            if button == 1:
+                self._update_scrollbar_geometry()
+
+                if self._scrollbar_thumb_rect.collidepoint(pos):
+                    self._scrollbar_dragging = True
+                    self._scrollbar_drag_offset = pos[1] - self._scrollbar_thumb_rect.y
+                    return
+
+                if self._scrollbar_track_rect.collidepoint(pos):
+                    if pos[1] < self._scrollbar_thumb_rect.y:
+                        self._scroll_by(-self.wheel_step * 3)
+                    else:
+                        self._scroll_by(self.wheel_step * 3)
+                    return
+
+        elif event.type == pygame.MOUSEMOTION:
+            if not self._scrollbar_dragging:
+                return
+
+            self._update_scrollbar_geometry()
+            if self._max_scroll <= 0:
+                self._scrollbar_dragging = False
+                return
+
+            track = self._scrollbar_track_rect
+            thumb = self._scrollbar_thumb_rect
+            travel = max(1, track.height - thumb.height)
+            target_y = event.pos[1] - self._scrollbar_drag_offset
+            clamped_y = max(track.y, min(target_y, track.bottom - thumb.height))
+            ratio = (clamped_y - track.y) / travel
+            self._set_scroll_y(ratio * self._max_scroll)
+            return
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if getattr(event, "button", None) == 1:
+                self._scrollbar_dragging = False
+                return
+
+        elif event.type == pygame.MOUSEWHEEL:
+            mouse_pos = pygame.mouse.get_pos()
+            if self._viewport_rect_absolute().collidepoint(mouse_pos):
+                self._scroll_by(-event.y * self.wheel_step)
+            return
 
 
 class VBoxLayout(LayoutContainer):
@@ -82,18 +325,59 @@ class VBoxLayout(LayoutContainer):
         color=None,
         border_color=None,
         align: str = "left",
+        scrollable: bool = False,
+        show_scrollbar: bool = True,
+        smooth_scroll: bool = False,
+        smooth_scroll_factor: float = 0.14,
+        smooth_snap_threshold: float = 2.0,
     ):
-        super().__init__(rect, spacing, padding, z_index, color, border_color)
+        super().__init__(
+            rect,
+            spacing,
+            padding,
+            z_index,
+            color,
+            border_color,
+            scrollable=scrollable,
+            show_scrollbar=show_scrollbar,
+            smooth_scroll=smooth_scroll,
+            smooth_scroll_factor=smooth_scroll_factor,
+            smooth_snap_threshold=smooth_snap_threshold,
+        )
         self.align = align  # "left", "center", "right"
 
     def _do_layout(self):
         if not self.children:
+            self._set_content_height(0)
             return
 
-        container_width = self.rect[2] - 2 * self.padding
-        container_height = self.rect[3] - 2 * self.padding
+        visible_children = []
+        for child in self.children:
+            if child.visible:
+                visible_children.append(child)
 
-        current_y = self.padding
+        measured_height = 0
+        for child in visible_children:
+            if hasattr(child, "get_layout_height"):
+                measured_height += child.get_layout_height()
+            elif len(child.rect) > 3:
+                measured_height += child.rect[3]
+            else:
+                measured_height += 40
+
+        if len(visible_children) > 1:
+            measured_height += self.spacing * (len(visible_children) - 1)
+
+        if self.scrollable:
+            self._set_content_height(measured_height)
+        else:
+            self._set_content_height(0)
+
+        container_width = self.rect[2] - 2 * self.padding - self._scrollbar_reservation()
+        container_width = max(1, container_width)
+        y_offset = int(round(self._scroll_y)) if self.scrollable else 0
+
+        current_y = self.padding - y_offset
 
         for child in self.children:
             if not child.visible:
@@ -132,16 +416,54 @@ class HBoxLayout(LayoutContainer):
         color=None,
         border_color=None,
         align: str = "top",
+        scrollable: bool = False,
+        show_scrollbar: bool = True,
+        smooth_scroll: bool = False,
+        smooth_scroll_factor: float = 0.14,
+        smooth_snap_threshold: float = 2.0,
     ):
-        super().__init__(rect, spacing, padding, z_index, color, border_color)
+        super().__init__(
+            rect,
+            spacing,
+            padding,
+            z_index,
+            color,
+            border_color,
+            scrollable=scrollable,
+            show_scrollbar=show_scrollbar,
+            smooth_scroll=smooth_scroll,
+            smooth_scroll_factor=smooth_scroll_factor,
+            smooth_snap_threshold=smooth_snap_threshold,
+        )
         self.align = align  # "top", "center", "bottom"
 
     def _do_layout(self):
         if not self.children:
+            self._set_content_height(0)
             return
 
-        container_width = self.rect[2] - 2 * self.padding
+        container_width = self.rect[2] - 2 * self.padding - self._scrollbar_reservation()
         container_height = self.rect[3] - 2 * self.padding
+        container_width = max(1, container_width)
+
+        max_h = 0
+        for child in self.children:
+            if not child.visible:
+                continue
+            if hasattr(child, "get_layout_height"):
+                child_h = child.get_layout_height()
+            elif len(child.rect) > 3:
+                child_h = child.rect[3]
+            else:
+                child_h = 40
+            max_h = max(max_h, child_h)
+
+        if self.scrollable:
+            self._set_content_height(max_h)
+        else:
+            self._set_content_height(0)
+
+        y_offset = int(round(self._scroll_y)) if self.scrollable else 0
 
         current_x = self.padding
 
@@ -154,11 +476,11 @@ class HBoxLayout(LayoutContainer):
                 child_height = child.rect[3] if len(child.rect) > 3 else container_height
 
                 if self.align == "center":
-                    child_y = self.padding + (container_height - child_height) // 2
+                    child_y = self.padding + (container_height - child_height) // 2 - y_offset
                 elif self.align == "bottom":
-                    child_y = self.padding + container_height - child_height
+                    child_y = self.padding + container_height - child_height - y_offset
                 else:
-                    child_y = self.padding
+                    child_y = self.padding - y_offset
 
                 child.rect = (current_x, child_y, child_width, child_height)
                 child.update_absolute_rect()
