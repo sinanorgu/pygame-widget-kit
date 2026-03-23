@@ -75,8 +75,20 @@ class Button(UIComponent):
         if self.border_color:
             pygame.draw.rect(surface,self.border_color,self.absolute_rect,2)
 
+        content_rect = pygame.Rect(
+            self.absolute_rect[0],
+            self.absolute_rect[1],
+            self.absolute_rect[2],
+            self.absolute_rect[3],
+        )
+        old_clip = surface.get_clip()
+        effective_clip = content_rect.clip(old_clip)
+        surface.set_clip(effective_clip)
 
-        self.text.draw(surface)
+        if effective_clip.width > 0 and effective_clip.height > 0:
+            self.text.draw(surface)
+
+        surface.set_clip(old_clip)
 
 
     def handle_event(self, event):

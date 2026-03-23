@@ -1002,35 +1002,37 @@ class TextInput(UIComponent):
         text_y = self.absolute_rect[1] + self.padding
 
         prev_clip = surface.get_clip()
-        surface.set_clip(inner_rect)
+        effective_clip = inner_rect.clip(prev_clip)
+        surface.set_clip(effective_clip)
 
-        # SELECTION
-        if self.has_selection():
-            a, b = self.get_selection_range()
-            x1 = self.absolute_rect[0] + self.padding + self._text_width_until(a) - self._scroll_x
-            x2 = self.absolute_rect[0] + self.padding + self._text_width_until(b) - self._scroll_x
+        if effective_clip.width > 0 and effective_clip.height > 0:
+            # SELECTION
+            if self.has_selection():
+                a, b = self.get_selection_range()
+                x1 = self.absolute_rect[0] + self.padding + self._text_width_until(a) - self._scroll_x
+                x2 = self.absolute_rect[0] + self.padding + self._text_width_until(b) - self._scroll_x
 
-            h = self.text.render.get_height()
-            y = self.absolute_rect[1] + self.padding
+                h = self.text.render.get_height()
+                y = self.absolute_rect[1] + self.padding
 
-            pygame.draw.rect(
-                surface,
-                self.selection_color,
-                (x1, y, x2 - x1, h)
-            )
+                pygame.draw.rect(
+                    surface,
+                    self.selection_color,
+                    (x1, y, x2 - x1, h)
+                )
 
-        surface.blit(self.text.render, (text_x, text_y))
+            surface.blit(self.text.render, (text_x, text_y))
 
-        # CARET
-        if self.focused and self.caret_visible:
-            cx = self.absolute_rect[0] + self.padding + self._text_width_until(self.cursor_index) - self._scroll_x
-            cy = self.absolute_rect[1] + self.padding
+            # CARET
+            if self.focused and self.caret_visible:
+                cx = self.absolute_rect[0] + self.padding + self._text_width_until(self.cursor_index) - self._scroll_x
+                cy = self.absolute_rect[1] + self.padding
 
-            pygame.draw.rect(
-                surface,
-                self.caret_color,
-                (cx, cy, 2, self.text.render.get_height())
-            )
+                pygame.draw.rect(
+                    surface,
+                    self.caret_color,
+                    (cx, cy, 2, self.text.render.get_height())
+                )
 
         surface.set_clip(prev_clip)
 
@@ -1258,36 +1260,50 @@ class TextInput2D(UIComponent):
         line_height = self._get_line_height()
         y = self.absolute_rect[1] + self.padding
 
-        for i, line in enumerate(self.lines):
-            render = self.font.render(line, True, self.text_color)
-            surface.blit(render, (self.absolute_rect[0] + self.padding, y))
-            y += line_height
+        content_rect = pygame.Rect(
+            self.absolute_rect[0] + self.padding,
+            self.absolute_rect[1] + self.padding,
+            max(1, self.absolute_rect[2] - self.padding * 2),
+            max(1, self.absolute_rect[3] - self.padding * 2),
+        )
 
-        # CARET
-        if self.focused and self.caret_visible:
-            caret_x = self.absolute_rect[0] + self.padding + self._get_text_width(self.lines[self.cursor_line][:self.cursor_col])
-            caret_y = self.absolute_rect[1] + self.padding + self.cursor_line * line_height
+        prev_clip = surface.get_clip()
+        effective_clip = content_rect.clip(prev_clip)
+        surface.set_clip(effective_clip)
 
-            pygame.draw.rect(
-                surface,
-                self.caret_color,
-                (caret_x, caret_y, 2, line_height)
-            )
+        if effective_clip.width > 0 and effective_clip.height > 0:
+            for i, line in enumerate(self.lines):
+                render = self.font.render(line, True, self.text_color)
+                surface.blit(render, (self.absolute_rect[0] + self.padding, y))
+                y += line_height
 
-        # SELECTION - simplified, only same line
-        if self.has_selection():
-            sel_range = self.get_selection_range()
-            if sel_range:
-                a, b = sel_range
-                line = self.lines[self.cursor_line]
-                x1 = self.absolute_rect[0] + self.padding + self._get_text_width(line[:a])
-                x2 = self.absolute_rect[0] + self.padding + self._get_text_width(line[:b])
-                y = self.absolute_rect[1] + self.padding + self.cursor_line * line_height
+            # CARET
+            if self.focused and self.caret_visible:
+                caret_x = self.absolute_rect[0] + self.padding + self._get_text_width(self.lines[self.cursor_line][:self.cursor_col])
+                caret_y = self.absolute_rect[1] + self.padding + self.cursor_line * line_height
 
                 pygame.draw.rect(
                     surface,
-                    self.selection_color,
-                    (x1, y, x2 - x1, line_height)
+                    self.caret_color,
+                    (caret_x, caret_y, 2, line_height)
                 )
+
+            # SELECTION - simplified, only same line
+            if self.has_selection():
+                sel_range = self.get_selection_range()
+                if sel_range:
+                    a, b = sel_range
+                    line = self.lines[self.cursor_line]
+                    x1 = self.absolute_rect[0] + self.padding + self._get_text_width(line[:a])
+                    x2 = self.absolute_rect[0] + self.padding + self._get_text_width(line[:b])
+                    y = self.absolute_rect[1] + self.padding + self.cursor_line * line_height
+
+                    pygame.draw.rect(
+                        surface,
+                        self.selection_color,
+                        (x1, y, x2 - x1, line_height)
+                    )
+
+        surface.set_clip(prev_clip)
 
 

@@ -112,9 +112,26 @@ class TextArea(UIComponent):
         y = self.absolute_rect[1] + self.padding
         step = self.line_height + self.line_spacing
 
+        content_rect = pygame.Rect(
+            self.absolute_rect[0] + self.padding,
+            self.absolute_rect[1] + self.padding,
+            max(1, self.absolute_rect[2] - self.padding * 2),
+            max(1, self.absolute_rect[3] - self.padding * 2),
+        )
+
+        old_clip = surface.get_clip()
+        effective_clip = content_rect.clip(old_clip)
+        surface.set_clip(effective_clip)
+
+        if effective_clip.width <= 0 or effective_clip.height <= 0:
+            surface.set_clip(old_clip)
+            return
+
         for i, line in enumerate(self.lines):
             if color == self.text_color:
                 render = self.line_renders[i]
             else:
                 render = self.font.render(line, True, color, None)
             surface.blit(render, (x, y + i * step))
+
+        surface.set_clip(old_clip)

@@ -28,6 +28,7 @@ class UIComponent:
         self.color = color
 
         self.hover_color = hover_color or (tuple(min(c + 30, 255) for c in color) if color is not None else None) 
+        self.clip_children = False
 
 
 
@@ -75,9 +76,35 @@ class UIComponent:
     def on_blur(self):
         self.focused = False
     
+    def get_children_clip_rect(self):
+        if not self.clip_children:
+            return None
+
+        return pygame.Rect(
+            self.absolute_rect[0],
+            self.absolute_rect[1],
+            self.absolute_rect[2],
+            self.absolute_rect[3],
+        )
+
     def draw_child(self, surface: pygame.Surface):
+        clip_rect = self.get_children_clip_rect()
+        old_clip = None
+
+        if clip_rect is not None:
+            old_clip = surface.get_clip()
+            effective_clip = clip_rect.clip(old_clip)
+            surface.set_clip(effective_clip)
+
+            if effective_clip.width <= 0 or effective_clip.height <= 0:
+                surface.set_clip(old_clip)
+                return
+
         for child in sorted(self.children, key=lambda c: c.z_index):
             child.draw(surface)
+
+        if old_clip is not None:
+            surface.set_clip(old_clip)
 
     def is_in_rect(self,pos):
         if self.absolute_rect[0]<pos[0] < self.absolute_rect[0]+self.absolute_rect[2] and \

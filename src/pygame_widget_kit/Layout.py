@@ -31,10 +31,19 @@ class LayoutContainer(Widget):
         self.spacing = spacing
         self.padding = padding
         self._layout_dirty = True
+        self.clip_children = True
+
+    def get_children_clip_rect(self):
+        return pygame.Rect(
+            self.absolute_rect[0],
+            self.absolute_rect[1],
+            self.absolute_rect[2],
+            self.absolute_rect[3],
+        )
 
     def add_child(self, component: UIComponent):
         super().add_child(component)
-        self._layout_dirty = True
+        self.mark_layout_dirty()
 
     def mark_layout_dirty(self):
         self._layout_dirty = True
@@ -42,11 +51,15 @@ class LayoutContainer(Widget):
             self.parent.mark_layout_dirty()
 
     def layout_children(self):
-        if not self._layout_dirty:
+        if self._layout_dirty:
+            self._layout_dirty = False
             self._do_layout()
             return
-        self._layout_dirty = False
-        self._do_layout()
+
+        # Even when layout is clean, parent absolute positions may change.
+        # Keep child absolute rects synced without recomputing full layout.
+        for child in self.children:
+            child.update_absolute_rect()
 
     def _do_layout(self):
         """Override in subclasses."""
@@ -203,6 +216,8 @@ class CollapsibleContainer(VBoxLayout):
         else:
             self.animated_height_ratio = target_ratio
 
+        self.mark_layout_dirty()
+
         if self.parent and isinstance(self.parent, LayoutContainer):
             self.parent.mark_layout_dirty()
 
@@ -219,8 +234,17 @@ class CollapsibleContainer(VBoxLayout):
     def _measure_content_height(self):
         total = 0
         for child in self.children:
-            if hasattr(child, "rect") and len(child.rect) > 3:
-                total += child.rect[3] + self.spacing
+            if not child.visible:
+                continue
+
+            if hasattr(child, "get_layout_height"):
+                child_height = child.get_layout_height()
+            elif hasattr(child, "rect") and len(child.rect) > 3:
+                child_height = child.rect[3]
+            else:
+                child_height = 40
+
+            total += child_height + self.spacing
 
         if total > 0:
             total -= self.spacing
@@ -260,14 +284,18 @@ class CollapsibleContainer(VBoxLayout):
 
             if hasattr(child, "rect") and len(child.rect) > 3:
                 child_width = child.rect[2]
-                child_height = child.rect[3]
+                child_rect_height = child.rect[3]
+                if hasattr(child, "get_layout_height"):
+                    child_layout_height = child.get_layout_height()
+                else:
+                    child_layout_height = child_rect_height
 
                 child_y = self.header_height + self.padding + current_y
 
-                child.rect = (self.padding, child_y, child_width, child_height)
+                child.rect = (self.padding, child_y, child_width, child_rect_height)
                 child.update_absolute_rect()
 
-                current_y += child_height + self.spacing
+                current_y += child_layout_height + self.spacing
 
     def draw(self, surface: pygame.Surface):
         if not self.visible:
@@ -340,20 +368,22 @@ class CollapsibleContainer(VBoxLayout):
             max(0, round(self.content_height * self.animated_height_ratio)),
         )
         old_clip = surface.get_clip()
-        surface.set_clip(clip_rect)
+        effective_clip = clip_rect.clip(old_clip)
+        surface.set_clip(effective_clip)
 
         modal_component = self.ui_manager.modal if self.ui_manager is not None else None
         deferred_draw = []
 
-        for child in sorted(self.children, key=lambda c: c.z_index):
-            if not child.visible:
-                continue
+        if effective_clip.width > 0 and effective_clip.height > 0:
+            for child in sorted(self.children, key=lambda c: c.z_index):
+                if not child.visible:
+                    continue
 
-            if modal_component is not None and self._contains_component(child, modal_component):
-                deferred_draw.append(child)
-                continue
+                if modal_component is not None and self._contains_component(child, modal_component):
+                    deferred_draw.append(child)
+                    continue
 
-            child.draw(surface)
+                child.draw(surface)
 
         surface.set_clip(old_clip)
 
