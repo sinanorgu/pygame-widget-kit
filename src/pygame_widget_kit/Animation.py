@@ -132,6 +132,42 @@ class PropertyAnimation(Animation):
         self.setter(value)
 
 
+class AngleAnimation(PropertyAnimation):
+    def __init__(
+        self,
+        getter: Callable[[], float],
+        setter: Callable[[float], None],
+        to_angle: float,
+        duration: float,
+        from_angle: float = None,
+        easing: Callable[[float], float] | None = None,
+        delay: float = 0.0,
+        on_start: Callable[[], None] | None = None,
+        on_update: Callable[[float], None] | None = None,
+        on_complete: Callable[[], None] | None = None,
+        key: Any = None,
+        shortest_path: bool = True,
+    ):
+        self.shortest_path = shortest_path
+        super().__init__(
+            getter=getter,
+            setter=setter,
+            to_value=to_angle,
+            duration=duration,
+            from_value=from_angle,
+            easing=easing,
+            delay=delay,
+            on_start=on_start,
+            on_update=on_update,
+            on_complete=on_complete,
+            interpolator=self._interpolate_angle,
+            key=key,
+        )
+
+    def _interpolate_angle(self, a: float, b: float, t: float):
+        return interpolate_angle_degrees(a, b, t, self.shortest_path)
+
+
 class AnimationManager:
     def __init__(self):
         self.animations: list[Animation] = []
@@ -243,3 +279,15 @@ def interpolate_value(a: Any, b: Any, t: float):
         pass
 
     return b if t >= 1.0 else a
+
+
+def interpolate_angle_degrees(a: float, b: float, t: float, shortest_path: bool = True):
+    start = float(a)
+    end = float(b)
+
+    if shortest_path:
+        delta = ((end - start + 180.0) % 360.0) - 180.0
+    else:
+        delta = end - start
+
+    return start + delta * t

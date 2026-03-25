@@ -12,3 +12,5 @@ from .Radio import*
 from .Slider import*
 from .TextArea import*
 from .TextArea import*
+from .Loading import*
+from .ProgressBar import*
