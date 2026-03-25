@@ -2,6 +2,9 @@ from .UIComponent import *
 from .Widget import *
 from .Text import *
 from .Button import *
+from .ToggleButton import *
+from .Animation import *
+from .Layout import *
 from .UIManager import*
 from .Select import*
 from .TextInput import*

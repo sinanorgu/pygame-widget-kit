@@ -42,6 +42,8 @@ class Text(UIComponent):
     
 
     def draw(self, surface):
+        if not self.visible:
+            return
         surface.blit(self.render,self.absolute_rect)
         
 

@@ -1,7 +1,7 @@
 import pygame
 
 class UIComponent:
-    def __init__(self, rect, style=None,z_index = 0, color = None, border_color:tuple[int,int,int] = (0,255,0),hover_color = None):
+    def __init__(self, rect, style=None,z_index = 0, color = None, border_color:tuple[int,int,int] = (0,255,0),hover_color = None, color_active=None):
         self.rect = rect    
         self.absolute_rect = rect          
         #self.style = style or {}
@@ -20,19 +20,28 @@ class UIComponent:
 
         self.border_color = border_color
         self.show_border = True if border_color is not None else False
-        self.color_active = tuple(max(c - 40, 0) for c in color) if color is not None else None
+        if color_active is None:
+            self.color_active = tuple(max(c - 40, 0) for c in color) if color is not None else None
+        else:
+            self.color_active = color_active
 
         self.color = color
 
         self.hover_color = hover_color or (tuple(min(c + 30, 255) for c in color) if color is not None else None) 
+        self.clip_children = False
 
 
 
     def add_child(self, component:"UIComponent"):
         component.parent = self
-        component.ui_manager = self.ui_manager
+        component._set_ui_manager_recursive(self.ui_manager)
         self.children.append(component)
         component.update_absolute_rect()
+
+    def _set_ui_manager_recursive(self, ui_manager):
+        self.ui_manager = ui_manager
+        for child in self.children:
+            child._set_ui_manager_recursive(ui_manager)
     
     def update_absolute_rect(self):
         if self.parent is not None:
@@ -67,9 +76,35 @@ class UIComponent:
     def on_blur(self):
         self.focused = False
     
+    def get_children_clip_rect(self):
+        if not self.clip_children:
+            return None
+
+        return pygame.Rect(
+            self.absolute_rect[0],
+            self.absolute_rect[1],
+            self.absolute_rect[2],
+            self.absolute_rect[3],
+        )
+
     def draw_child(self, surface: pygame.Surface):
+        clip_rect = self.get_children_clip_rect()
+        old_clip = None
+
+        if clip_rect is not None:
+            old_clip = surface.get_clip()
+            effective_clip = clip_rect.clip(old_clip)
+            surface.set_clip(effective_clip)
+
+            if effective_clip.width <= 0 or effective_clip.height <= 0:
+                surface.set_clip(old_clip)
+                return
+
         for child in sorted(self.children, key=lambda c: c.z_index):
             child.draw(surface)
+
+        if old_clip is not None:
+            surface.set_clip(old_clip)
 
     def is_in_rect(self,pos):
         if self.absolute_rect[0]<pos[0] < self.absolute_rect[0]+self.absolute_rect[2] and \
@@ -104,7 +139,7 @@ class UIComponent:
                 fill_color = tuple(c // 2 for c in fill_color)
 
         elif self.active:
-            if fill_color is not None:
+            if fill_color is not None and self.color_active is not None:
                 fill_color = self.color_active
 
         elif self.hovered:
