@@ -14,3 +14,4 @@ from .TextArea import*
 from .TextArea import*
 from .Loading import*
 from .ProgressBar import*
+from .CodeEditor import*

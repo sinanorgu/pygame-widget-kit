@@ -187,7 +187,7 @@ class TextInputContextMenu(Widget):
 
 
 
-class TextInput(UIComponent):
+class __TextInput(UIComponent):
     def __init__(
         self,
         rect,
@@ -250,6 +250,10 @@ class TextInput(UIComponent):
         self._scroll_x = 0
         self._typing_burst_active = False
         self._typing_burst_last_cursor = None
+        self._delete_burst_active = False
+        self._delete_burst_mode = None
+        self._delete_burst_last_cursor = None
+        self._delete_burst_word_char = None
 
         #Keyboard repeat settings
         pygame.key.set_repeat(400, 50)
@@ -486,6 +490,34 @@ class TextInput(UIComponent):
     def _reset_typing_burst(self):
         self._typing_burst_active = False
         self._typing_burst_last_cursor = None
+        self._reset_delete_burst()
+
+    def _reset_typing_burst_only(self):
+        self._typing_burst_active = False
+        self._typing_burst_last_cursor = None
+
+    def _reset_delete_burst(self):
+        self._delete_burst_active = False
+        self._delete_burst_mode = None
+        self._delete_burst_last_cursor = None
+        self._delete_burst_word_char = None
+
+    def _begin_delete_burst(self, mode: str, cursor_index: int, is_word_char=None):
+        should_continue = (
+            self._delete_burst_active
+            and self._delete_burst_mode == mode
+            and self._delete_burst_last_cursor == cursor_index
+            and self._delete_burst_word_char == is_word_char
+            and not self.has_selection()
+        )
+        if not should_continue:
+            self._record_undo_state()
+
+    def _commit_delete_burst(self, mode: str, is_word_char=None):
+        self._delete_burst_active = True
+        self._delete_burst_mode = mode
+        self._delete_burst_last_cursor = self.cursor_index
+        self._delete_burst_word_char = is_word_char
 
     def _insert_typed_char(self, ch: str):
         is_word_char = self._is_word_char(ch)
@@ -628,57 +660,67 @@ class TextInput(UIComponent):
     def _delete_prev_word(self):
         start = self._prev_word_index(self.cursor_index)
         if start < self.cursor_index:
-            self._reset_typing_burst()
-            self._record_undo_state()
+            self._begin_delete_burst("delete-prev-word", self.cursor_index)
+            self._reset_typing_burst_only()
             self.text_value = self.text_value[:start] + self.text_value[self.cursor_index:]
             self.cursor_index = start
             self._ensure_cursor_visible()
+            self._commit_delete_burst("delete-prev-word")
 
     def _delete_next_word(self):
         end = self._next_word_index(self.cursor_index)
         if end > self.cursor_index:
-            self._reset_typing_burst()
-            self._record_undo_state()
+            self._begin_delete_burst("delete-next-word", self.cursor_index)
+            self._reset_typing_burst_only()
             self.text_value = self.text_value[:self.cursor_index] + self.text_value[end:]
             self._ensure_cursor_visible()
+            self._commit_delete_burst("delete-next-word")
 
     def _delete_to_line_start(self):
         if self.cursor_index > 0:
-            self._reset_typing_burst()
-            self._record_undo_state()
+            self._begin_delete_burst("delete-to-start", self.cursor_index)
+            self._reset_typing_burst_only()
             self.text_value = self.text_value[self.cursor_index:]
             self.cursor_index = 0
             self._ensure_cursor_visible()
+            self._commit_delete_burst("delete-to-start")
 
     def _delete_to_line_end(self):
         if self.cursor_index < len(self.text_value):
-            self._reset_typing_burst()
-            self._record_undo_state()
+            self._begin_delete_burst("delete-to-end", self.cursor_index)
+            self._reset_typing_burst_only()
             self.text_value = self.text_value[:self.cursor_index]
             self._ensure_cursor_visible()
+            self._commit_delete_burst("delete-to-end")
 
     def _delete_prev_char(self):
         if self.cursor_index <= 0:
             return
-        self._reset_typing_burst()
-        self._record_undo_state()
+        deleted_char = self.text_value[self.cursor_index - 1]
+        deleted_is_word = self._is_word_char(deleted_char)
+        self._begin_delete_burst("delete-prev-char", self.cursor_index, deleted_is_word)
+        self._reset_typing_burst_only()
         self.text_value = (
             self.text_value[:self.cursor_index - 1]
             + self.text_value[self.cursor_index:]
         )
         self.cursor_index -= 1
         self._ensure_cursor_visible()
+        self._commit_delete_burst("delete-prev-char", deleted_is_word)
 
     def _delete_next_char(self):
         if self.cursor_index >= len(self.text_value):
             return
-        self._reset_typing_burst()
-        self._record_undo_state()
+        deleted_char = self.text_value[self.cursor_index]
+        deleted_is_word = self._is_word_char(deleted_char)
+        self._begin_delete_burst("delete-next-char", self.cursor_index, deleted_is_word)
+        self._reset_typing_burst_only()
         self.text_value = (
             self.text_value[:self.cursor_index]
             + self.text_value[self.cursor_index + 1:]
         )
         self._ensure_cursor_visible()
+        self._commit_delete_burst("delete-next-char", deleted_is_word)
 
     def cut_selected_text(self):
         if not self.has_selection():
@@ -1038,7 +1080,7 @@ class TextInput(UIComponent):
 
 
 
-class TextInput2D(UIComponent):
+class TextInput(UIComponent):
     def __init__(
         self,
         rect,
@@ -1114,6 +1156,10 @@ class TextInput2D(UIComponent):
         self._max_history = 200
         self._typing_burst_active = False
         self._typing_burst_last_offset = None
+        self._delete_burst_active = False
+        self._delete_burst_mode = None
+        self._delete_burst_last_offset = None
+        self._delete_burst_word_char = None
 
         self._scroll_x = 0
         self._scroll_y = 0
@@ -1408,6 +1454,34 @@ class TextInput2D(UIComponent):
     def _reset_typing_burst(self):
         self._typing_burst_active = False
         self._typing_burst_last_offset = None
+        self._reset_delete_burst()
+
+    def _reset_typing_burst_only(self):
+        self._typing_burst_active = False
+        self._typing_burst_last_offset = None
+
+    def _reset_delete_burst(self):
+        self._delete_burst_active = False
+        self._delete_burst_mode = None
+        self._delete_burst_last_offset = None
+        self._delete_burst_word_char = None
+
+    def _begin_delete_burst(self, mode: str, cursor_offset: int, is_word_char=None):
+        should_continue = (
+            self._delete_burst_active
+            and self._delete_burst_mode == mode
+            and self._delete_burst_last_offset == cursor_offset
+            and self._delete_burst_word_char == is_word_char
+            and not self.has_selection()
+        )
+        if not should_continue:
+            self._record_undo_state()
+
+    def _commit_delete_burst(self, mode: str, is_word_char=None):
+        self._delete_burst_active = True
+        self._delete_burst_mode = mode
+        self._delete_burst_last_offset = self._pos_to_offset((self.cursor_line, self.cursor_col))
+        self._delete_burst_word_char = is_word_char
 
     def undo(self):
         if not self._undo_stack:
@@ -1535,7 +1609,7 @@ class TextInput2D(UIComponent):
                 if ch in "10":
                     out.append(ch)
             elif self.allowed_char_mode == OCTAL_ONLY:
-                if ch in "12345678":
+                if ch in "01234567":
                     out.append(ch)
 
         return "".join(out)
@@ -1591,62 +1665,72 @@ class TextInput2D(UIComponent):
         cursor_offset = self._pos_to_offset((self.cursor_line, self.cursor_col))
         if cursor_offset <= 0:
             return
-        self._record_undo_state()
-        self._reset_typing_burst()
         text = self._get_text()
+        deleted_is_word = self._is_word_char(text[cursor_offset - 1])
+        self._begin_delete_burst("delete-prev-char", cursor_offset, deleted_is_word)
+        self._reset_typing_burst_only()
         new_text = text[:cursor_offset - 1] + text[cursor_offset:]
         self._set_text_and_cursor_offset(new_text, cursor_offset - 1)
+        self._commit_delete_burst("delete-prev-char", deleted_is_word)
 
     def _delete_next_char(self):
         text = self._get_text()
         cursor_offset = self._pos_to_offset((self.cursor_line, self.cursor_col))
         if cursor_offset >= len(text):
             return
-        self._record_undo_state()
-        self._reset_typing_burst()
+        deleted_is_word = self._is_word_char(text[cursor_offset])
+        self._begin_delete_burst("delete-next-char", cursor_offset, deleted_is_word)
+        self._reset_typing_burst_only()
         new_text = text[:cursor_offset] + text[cursor_offset + 1:]
         self._set_text_and_cursor_offset(new_text, cursor_offset)
+        self._commit_delete_burst("delete-next-char", deleted_is_word)
 
     def _delete_prev_word(self):
         cursor_offset = self._pos_to_offset((self.cursor_line, self.cursor_col))
         start = self._prev_word_offset(cursor_offset)
         if start >= cursor_offset:
             return
-        self._record_undo_state()
-        self._reset_typing_burst()
+        self._begin_delete_burst("delete-prev-word", cursor_offset)
+        self._reset_typing_burst_only()
         text = self._get_text()
         new_text = text[:start] + text[cursor_offset:]
         self._set_text_and_cursor_offset(new_text, start)
+        self._commit_delete_burst("delete-prev-word")
 
     def _delete_next_word(self):
         cursor_offset = self._pos_to_offset((self.cursor_line, self.cursor_col))
         end = self._next_word_offset(cursor_offset)
         if end <= cursor_offset:
             return
-        self._record_undo_state()
-        self._reset_typing_burst()
+        self._begin_delete_burst("delete-next-word", cursor_offset)
+        self._reset_typing_burst_only()
         text = self._get_text()
         new_text = text[:cursor_offset] + text[end:]
         self._set_text_and_cursor_offset(new_text, cursor_offset)
+        self._commit_delete_burst("delete-next-word")
 
     def _delete_to_line_start(self):
         if self.cursor_col <= 0:
             return
-        self._record_undo_state()
-        self._reset_typing_burst()
+        cursor_offset = self._pos_to_offset((self.cursor_line, self.cursor_col))
+        self._begin_delete_burst("delete-to-start", cursor_offset)
+        self._reset_typing_burst_only()
         line = self.lines[self.cursor_line]
         self.lines[self.cursor_line] = line[self.cursor_col:]
         self.cursor_col = 0
         self._ensure_cursor_visible()
+        self._commit_delete_burst("delete-to-start")
 
     def _delete_to_line_end(self):
         line = self.lines[self.cursor_line]
         if self.cursor_col >= len(line):
             return
-        self._record_undo_state()
-        self._reset_typing_burst()
+        cursor_offset = self._pos_to_offset((self.cursor_line, self.cursor_col))
+        self._begin_delete_burst("delete-to-end", cursor_offset)
+        self._reset_typing_burst_only()
         self.lines[self.cursor_line] = line[:self.cursor_col]
         self._ensure_cursor_visible()
+        self._commit_delete_burst("delete-to-end")
 
     def _current_line_start_pos(self):
         return self.cursor_line, 0

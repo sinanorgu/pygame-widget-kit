@@ -14,9 +14,8 @@ from pygame_widget_kit.TextInput import (
     NUMBER_ONLY,
     OCTAL_ONLY,
     TEXT_ONLY,
-    TextInput,
-    TextInput2D,
-)
+    TextInput
+    )
 from pygame_widget_kit.UIComponent import UIComponent
 
 
@@ -440,13 +439,13 @@ class TestTextInput:
 
 
 @pytest.mark.unit
-class TestTextInput2D:
+class TestTextInput:
     """Test advanced 2D text input and scrollbar behaviors."""
 
     def test_vertical_scrollbar_appears_on_line_overflow(self):
         """Vertical scrollbar should appear when content exceeds available height."""
         long_text = "\n".join(["line"] * 40)
-        widget = TextInput2D(
+        widget = TextInput(
             rect=pygame.Rect(0, 0, 180, 90),
             initial_text=long_text,
             show_scrollbars=True,
@@ -458,7 +457,7 @@ class TestTextInput2D:
 
     def test_horizontal_scrollbar_appears_on_text_overflow(self):
         """Horizontal scrollbar should appear when a line is wider than available width."""
-        widget = TextInput2D(
+        widget = TextInput(
             rect=pygame.Rect(0, 0, 120, 90),
             initial_text="W" * 200,
             show_scrollbars=True,
@@ -470,7 +469,7 @@ class TestTextInput2D:
 
     def test_auto_scroll_moves_horizontally_while_typing(self):
         """Caret visibility logic should move horizontal scroll when typing long lines."""
-        widget = TextInput2D(
+        widget = TextInput(
             rect=pygame.Rect(0, 0, 120, 80),
             initial_text="",
             show_scrollbars=True,
@@ -485,7 +484,7 @@ class TestTextInput2D:
     def test_auto_scroll_moves_vertically_for_bottom_caret(self):
         """Caret visibility should move vertical scroll for long multi-line content."""
         long_text = "\n".join([f"line {i}" for i in range(60)])
-        widget = TextInput2D(
+        widget = TextInput(
             rect=pygame.Rect(0, 0, 180, 100),
             initial_text=long_text,
             show_scrollbars=True,
@@ -497,7 +496,7 @@ class TestTextInput2D:
     def test_vertical_scrollbar_drag_changes_scroll_position(self):
         """Dragging vertical scrollbar thumb should change scroll position."""
         long_text = "\n".join([f"line {i}" for i in range(80)])
-        widget = TextInput2D(
+        widget = TextInput(
             rect=pygame.Rect(0, 0, 180, 100),
             initial_text=long_text,
             show_scrollbars=True,
@@ -531,7 +530,7 @@ class TestTextInput2D:
     def test_mousewheel_scroll_changes_vertical_offset(self):
         """Mouse wheel should move vertical scroll when focused."""
         long_text = "\n".join([f"line {i}" for i in range(80)])
-        widget = TextInput2D(
+        widget = TextInput(
             rect=pygame.Rect(0, 0, 180, 100),
             initial_text=long_text,
             show_scrollbars=True,

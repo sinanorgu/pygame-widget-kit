@@ -11,7 +11,7 @@ PyPI: https://pypi.org/project/pygame-widget-kit/
 - Retained-mode component tree with nested children
 - Event routing with hover, focus, and active state handling
 - Modal/dropdown support via `UIManager`
-- Built-in widgets: `Button`, `Text`, `Select`, `Radio`, `TextInput`, `Slider`,`TextArea`,`TextInput2D`
+- Built-in widgets: `Button`, `Text`, `Select`, `Radio`, `TextInput`, `Slider`,`TextArea`, `CodeEditor`
 - Text input filtering modes (text, number, hex, binary, octal)
 
 
@@ -157,6 +157,30 @@ if __name__ == "__main__":
 - `Select` uses modal behavior through `UIManager`; clicks outside the dropdown close it.
 - `Select` expects `options` as a list of strings and exposes `selected_value`.
 - `Radio` expects `options` as a list of `(label, value)` tuples and exposes `get_value()`.
+
+## CodeEditor (syntax highlight)
+
+`CodeEditor`, `TextInput` sinifini inherit eder ve anahtar kelimeleri renk/bold/italic ile cizer.
+
+```python
+editor = CodeEditor(
+    rect=(24, 520, 620, 170),
+    initial_text="for i in range(3):\n    print(i)",
+    keyword_styles={
+        "for": {"color": (0, 120, 255), "bold": True},
+        "in": {"color": (0, 120, 255), "bold": True},
+        "range": {"color": (200, 120, 30), "italic": True},
+    },
+)
+root.add_child(editor)
+
+# Autocomplete altyapisi (UI'siz provider hook)
+def my_provider(full_text, cursor_pos, prefix):
+    return ["for", "format", "from"] if prefix.startswith("f") else []
+
+editor.set_autocomplete_provider(my_provider)
+suggestions = editor.request_completions()
+```
 
 ## TextInput allowed_char_mode
 

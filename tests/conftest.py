@@ -7,7 +7,6 @@ from pathlib import Path
 # Add src to path so we can import pygame_widget_kit
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-
 @pytest.fixture(scope="session", autouse=True)
 def init_pygame():
     """Initialize Pygame for all tests."""
